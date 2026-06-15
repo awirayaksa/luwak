@@ -8,6 +8,21 @@ import { makeRedactor } from "./redact.ts";
 import type { ProxyTap } from "./proxy.ts";
 // Embedded so the compiled binary is self-contained.
 import viewerHtml from "../public/index.html" with { type: "text" };
+// Brand assets, embedded as files so they ship inside the compiled binary.
+import faviconIco from "../public/assets/favicon.ico" with { type: "file" };
+import iconSvg from "../public/assets/luwak-icon.svg" with { type: "file" };
+import markSvg from "../public/assets/luwak-mark.svg" with { type: "file" };
+import logoSvg from "../public/assets/luwak-logo.svg" with { type: "file" };
+import logoPng from "../public/assets/luwak-logo.png" with { type: "file" };
+import monoSvg from "../public/assets/luwak-mono.svg" with { type: "file" };
+const assets: Record<string, string> = {
+  "favicon.ico": faviconIco,
+  "luwak-icon.svg": iconSvg,
+  "luwak-mark.svg": markSvg,
+  "luwak-logo.svg": logoSvg,
+  "luwak-logo.png": logoPng,
+  "luwak-mono.svg": monoSvg,
+};
 
 const config = loadConfig(process.env.LUWAK_CONFIG ?? "luwak.yaml");
 const store = new Store(config.db);
@@ -69,6 +84,11 @@ const server = Bun.serve({
     // --- Viewer + query API (these win over proxy prefixes) ---
     if (path === "/" || path === "/app") {
       return new Response(viewerHtml, { headers: { "content-type": "text/html" } });
+    }
+    const asset = path.match(/^\/assets\/(.+)$/);
+    if (asset && assets[asset[1]]) {
+      // Bun.file infers content-type from the extension.
+      return new Response(Bun.file(assets[asset[1]]));
     }
     if (path === "/api/exchanges") {
       return json(store.list());

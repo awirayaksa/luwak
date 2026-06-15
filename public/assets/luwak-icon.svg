@@ -1,0 +1,36 @@
+<svg viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#3C2618"/>
+      <stop offset="1" stop-color="#23140C"/>
+    </linearGradient>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F7E9D2"/>
+      <stop offset="1" stop-color="#E6CBA4"/>
+    </linearGradient>
+    <linearGradient id="muzzle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#EFD8B6"/>
+      <stop offset="1" stop-color="#F4E3C8"/>
+    </linearGradient>
+    <radialGradient id="eye" cx="0.5" cy="0.38" r="0.75">
+      <stop offset="0" stop-color="#FFD884"/>
+      <stop offset="0.55" stop-color="#EAA53F"/>
+      <stop offset="1" stop-color="#C57C20"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="0" y="0" width="256" height="256" rx="60" fill="url(#bg)"/>
+  <path fill="url(#fur)" d="M70 54 C63 64 60 96 60 124 C60 158 66 184 84 200 C100 214 116 220 128 220 C140 220 156 214 172 200 C190 184 196 158 196 124 C196 96 193 64 186 54 C178 64 168 80 158 88 C148 82 138 80 128 80 C118 80 108 82 98 88 C88 80 78 64 70 54 Z"/>
+  <path fill="#3C2618" d="M73 62 C70 74 70 86 74 94 C82 86 88 78 92 70 C86 66 79 63 73 62 Z"/>
+  <path fill="#3C2618" d="M183 62 C186 74 186 86 182 94 C174 86 168 78 164 70 C170 66 177 63 183 62 Z"/>
+  <path fill="#CBA77C" opacity="0.6" d="M128 86 C124 86 122 96 123 108 L133 108 C134 96 132 86 128 86 Z"/>
+  <path fill="url(#muzzle)" d="M96 156 C108 150 118 148 128 148 C138 148 148 150 160 156 C158 184 144 206 128 206 C112 206 98 184 96 156 Z"/>
+  <path fill="#33200F" d="M70 116 C92 102 110 100 128 100 C146 100 164 102 186 116 C184 138 175 152 159 158 C148 162 139 154 128 154 C117 154 108 162 97 158 C81 152 72 138 70 116 Z"/>
+  <circle cx="103" cy="126" r="17" fill="url(#eye)"/>
+  <circle cx="153" cy="126" r="17" fill="url(#eye)"/>
+  <ellipse cx="103" cy="128" rx="8" ry="8.5" fill="#22100A"/>
+  <ellipse cx="153" cy="128" rx="8" ry="8.5" fill="#22100A"/>
+  <circle cx="108" cy="122" r="3.4" fill="#FCF4E8"/>
+  <circle cx="158" cy="122" r="3.4" fill="#FCF4E8"/>
+  <path fill="#33200F" d="M128 170 L139 181 C135 189 131 191 128 191 C125 191 121 189 117 181 Z"/>
+</svg>

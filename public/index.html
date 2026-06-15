@@ -4,82 +4,173 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>luwak</title>
+<link rel="icon" href="/assets/favicon.ico" />
+<link rel="icon" type="image/svg+xml" href="/assets/luwak-icon.svg" />
 <style>
-  :root { color-scheme: dark; }
+  /* Coffee brand palette — "espresso" (dark, default) + "latte" (light). */
+  :root {
+    color-scheme: dark;
+    --bg: #1B0F08; --panel: #23140C; --raised: #2C1B10; --border: #3C2618;
+    --text: #F7E9D2; --muted: #9C7A57;
+    --accent: #EAA53F; --accent-strong: #FFD884; --accent-soft: #EAA53F22;
+    --ok: #FFD884;
+    --danger: #E5634D; --danger-soft: #E5634D33;
+    --hover: #2C1B1066; --active-bg: #EAA53F1f;
+    --user: #E6CBA4; --user-soft: #E6CBA433;
+    --assistant: #FFD884; --assistant-soft: #EAA53F2e;
+    --tool: #E3B341; --tool-soft: #BB800933;
+    --thinking: #C9A6E0; --thinking-bg: #271a2b;
+    --tint-call: #2a1d0c; --tint-result: #16210f;
+    --mark-bg: #EAA53F55; --shadow: 0 10px 34px #000a;
+  }
+  :root[data-theme="latte"] {
+    color-scheme: light;
+    --bg: #F4E3C8; --panel: #EFD8B6; --raised: #FBF1DD; --border: #D9BE97;
+    --text: #2C1B10; --muted: #6B5236;
+    --accent: #B9741A; --accent-strong: #C57C20; --accent-soft: #C57C2022;
+    --ok: #1A7F37;
+    --danger: #B23A28; --danger-soft: #B23A2826;
+    --hover: #00000008; --active-bg: #C57C201f;
+    --user: #7A5A33; --user-soft: #C9A06633;
+    --assistant: #9A5E10; --assistant-soft: #C57C2026;
+    --tool: #9A6B12; --tool-soft: #C9A06633;
+    --thinking: #6E4B8A; --thinking-bg: #EBDFC2;
+    --tint-call: #F3E2BE; --tint-result: #E9EBCB;
+    --mark-bg: #E9B14a99; --shadow: 0 10px 30px #4a2f1330;
+  }
+  :root[data-theme="github"] {
+    color-scheme: dark;
+    --bg: #0e1116; --panel: #161b22; --raised: #161b22; --border: #2a313c;
+    --text: #d7dde5; --muted: #768390;
+    --accent: #1f6feb; --accent-strong: #58a6ff; --accent-soft: #1f6feb22;
+    --ok: #3fb950;
+    --danger: #f85149; --danger-soft: #f8514933;
+    --hover: #161b22; --active-bg: #1f6feb22;
+    --user: #79c0ff; --user-soft: #1f6feb33;
+    --assistant: #56d364; --assistant-soft: #3fb95033;
+    --tool: #e3b341; --tool-soft: #bb800933;
+    --thinking: #b39ddb; --thinking-bg: #1c1a2b;
+    --tint-call: #20180e; --tint-result: #0e1a14;
+    --mark-bg: #bb800966; --shadow: 0 8px 30px #000a;
+  }
+  :root[data-theme="snow"] {
+    color-scheme: light;
+    --bg: #ffffff; --panel: #f6f8fa; --raised: #f6f8fa; --border: #d0d7de;
+    --text: #1f2328; --muted: #656d76;
+    --accent: #0969da; --accent-strong: #0550ae; --accent-soft: #0969da14;
+    --ok: #1a7f37;
+    --danger: #cf222e; --danger-soft: #cf222e1a;
+    --hover: #eaeef2; --active-bg: #0969da14;
+    --user: #0550ae; --user-soft: #ddf4ff;
+    --assistant: #116329; --assistant-soft: #dafbe1;
+    --tool: #7d4e00; --tool-soft: #fff8c5;
+    --thinking: #6639ba; --thinking-bg: #faf5ff;
+    --tint-call: #fff8e8; --tint-result: #eafaef;
+    --mark-bg: #fae17d; --shadow: 0 10px 30px #1f23281f;
+  }
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-         background: #0e1116; color: #d7dde5; height: 100vh; display: grid;
+         background: var(--bg); color: var(--text); height: 100vh; display: grid;
          grid-template-columns: 400px 1fr; }
-  header { grid-column: 1 / -1; padding: 8px 14px; background: #161b22; border-bottom: 1px solid #2a313c;
-           display: flex; align-items: center; gap: 10px; }
-  header b { color: #f0f6fc; font-size: 14px; }
-  input[type=search] { flex: 1; background: #0e1116; color: #d7dde5; border: 1px solid #30363d;
-           border-radius: 6px; padding: 5px 10px; font: inherit; }
-  button { background: #21262d; color: #adbac7; border: 1px solid #30363d; border-radius: 6px;
-           padding: 4px 10px; cursor: pointer; font: inherit; }
-  button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
-  #list { overflow: auto; border-right: 1px solid #2a313c; }
-  .row { padding: 8px 12px; border-bottom: 1px solid #1c222b; cursor: pointer; }
-  .row:hover { background: #161b22; }
-  .row.active { background: #1f6feb22; border-left: 2px solid #1f6feb; }
+  header { grid-column: 1 / -1; padding: 8px 14px; background: var(--panel);
+           border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  header .logo { width: 24px; height: 24px; display: block; }
+  header b { color: var(--text); font-size: 15px; letter-spacing: .02em; }
+  header .grow { flex: 1; }
+  input[type=search] { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+           border-radius: 7px; padding: 5px 10px; font: inherit; }
+  input[type=search]::placeholder { color: var(--muted); }
+  input[type=search]:focus { outline: none; border-color: var(--accent); }
+  button { background: var(--raised); color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+           padding: 4px 10px; cursor: pointer; font: inherit; transition: background .12s, border-color .12s; }
+  button:hover { border-color: var(--accent); }
+  button.active { background: var(--accent); color: #23140C; border-color: var(--accent); font-weight: 600; }
+  select { background: var(--raised); color: var(--text); border: 1px solid var(--border); border-radius: 7px;
+           padding: 4px 8px; font: inherit; cursor: pointer; }
+  select:hover { border-color: var(--accent); }
+  select:focus { outline: none; border-color: var(--accent); }
+  #list { overflow: auto; border-right: 1px solid var(--border); }
+  .row { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .row:hover { background: var(--hover); }
+  .row.active { background: var(--active-bg); border-left: 3px solid var(--accent); padding-left: 9px; }
   .row .top { display: flex; justify-content: space-between; gap: 8px; }
-  .row .method { color: #58a6ff; }
-  .row .status-2 { color: #3fb950; } .row .status-4, .row .status-5 { color: #f85149; }
-  .row .path, .row .ttl { color: #adbac7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .row .ttl { font-size: 13px; color: #e6edf3; margin-bottom: 2px; }
-  .row .meta { color: #768390; font-size: 11px; }
-  .row .snip { color: #adbac7; font-size: 12px; }
-  .row .snip mark { background: #bb800966; color: #f0f6fc; }
-  .tag { font-size: 10px; padding: 0 5px; border-radius: 8px; background: #30363d; color: #adbac7; }
-  .tag.stream { background: #1f6feb33; color: #79c0ff; }
-  .tag.partial, .tag.branch { background: #f8514933; color: #ff7b72; }
+  .row .method { color: var(--accent); }
+  .row .status-2 { color: var(--ok); } .row .status-4, .row .status-5 { color: var(--danger); }
+  .row .path, .row .ttl { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .ttl { font-size: 13px; color: var(--text); margin-bottom: 2px; }
+  .row .meta { color: var(--muted); font-size: 11px; }
+  .row .snip { color: var(--text); font-size: 12px; }
+  .row .snip mark { background: var(--mark-bg); color: var(--text); border-radius: 3px; }
+  .tag { font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--border); color: var(--muted); }
+  .tag.stream { background: var(--accent-soft); color: var(--accent); }
+  .tag.partial, .tag.branch { background: var(--danger-soft); color: var(--danger); }
   #detail { overflow: auto; padding: 14px; }
-  #detail .empty { color: #768390; margin-top: 40px; text-align: center; }
+  #detail .empty { color: var(--muted); margin-top: 40px; text-align: center; }
   .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
   .tabs .spacer { flex: 1; }
-  h3 { color: #768390; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
-  pre { background: #161b22; border: 1px solid #2a313c; border-radius: 6px; padding: 10px;
+  h3 { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+  pre { background: var(--raised); border: 1px solid var(--border); border-radius: 7px; padding: 10px;
         white-space: pre-wrap; word-break: break-word; overflow-x: auto; margin: 0; }
-  .kv { color: #768390; } .kv b { color: #adbac7; font-weight: normal; }
-  .msg { border: 1px solid #2a313c; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
-  .msg .hd { padding: 4px 10px; background: #161b22; display: flex; gap: 8px; align-items: center; }
+  .kv { color: var(--muted); } .kv b { color: var(--text); font-weight: normal; }
+  .msg { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 8px; overflow: hidden; }
+  .msg .hd { padding: 4px 10px; background: var(--panel); display: flex; gap: 8px; align-items: center; }
   .role { font-size: 10px; padding: 1px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: .04em; }
-  .role.system { background: #6e768166; color: #d7dde5; }
-  .role.user { background: #1f6feb33; color: #79c0ff; }
-  .role.assistant { background: #3fb95033; color: #56d364; }
-  .role.tool { background: #bb800933; color: #e3b341; }
-  .src { color: #768390; font-size: 11px; }
-  .marker { font-size: 10px; color: #ff7b72; border: 1px solid #f8514955; border-radius: 8px; padding: 1px 6px; }
-  .part { padding: 8px 10px; border-top: 1px solid #1c222b; }
-  .part .pt { color: #768390; font-size: 10px; text-transform: uppercase; margin-bottom: 3px; }
-  .part.thinking { background: #1c1a2b; } .part.thinking .pt { color: #b39ddb; }
-  .part.tool_call { background: #20180e; } .part.tool_call .pt { color: #e3b341; }
-  .part.tool_result { background: #0e1a14; } .part.tool_result .pt { color: #56d364; }
+  .role.system { background: var(--border); color: var(--text); }
+  .role.user { background: var(--user-soft); color: var(--user); }
+  .role.assistant { background: var(--assistant-soft); color: var(--assistant); }
+  .role.tool { background: var(--tool-soft); color: var(--tool); }
+  .src { color: var(--muted); font-size: 11px; }
+  .marker { font-size: 10px; color: var(--danger); border: 1px solid var(--danger-soft); border-radius: 8px; padding: 1px 6px; }
+  .part { padding: 8px 10px; border-top: 1px solid var(--border); }
+  .part .pt { color: var(--muted); font-size: 10px; text-transform: uppercase; margin-bottom: 3px; }
+  .part.thinking { background: var(--thinking-bg); } .part.thinking .pt { color: var(--thinking); }
+  .part.tool_call { background: var(--tint-call); } .part.tool_call .pt { color: var(--tool); }
+  .part.tool_result { background: var(--tint-result); } .part.tool_result .pt { color: var(--accent); }
   #live { position: fixed; bottom: 16px; right: 16px; width: 460px; max-height: 320px; overflow: auto;
-          background: #10161f; border: 1px solid #1f6feb; border-radius: 10px; box-shadow: 0 8px 30px #000a;
+          background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; box-shadow: var(--shadow);
           padding: 10px 12px; display: none; z-index: 10; }
   #live.on { display: block; }
-  #live .lhd { color: #79c0ff; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px;
+  #live .lhd { color: var(--accent); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px;
                display: flex; align-items: center; gap: 6px; }
-  #live .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; animation: pulse 1s infinite; }
+  #live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-strong); animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
   #live pre { background: transparent; border: 0; padding: 0; max-height: 260px; }
 </style>
 </head>
 <body>
   <header>
+    <img class="logo" src="/assets/luwak-mark.svg" alt="" />
     <b>luwak</b>
     <button id="m-threads" onclick="setMode('threads')">Threads</button>
     <button id="m-feed" onclick="setMode('feed')">Feed</button>
     <input id="q" type="search" placeholder="search messages (FTS)…" />
     <button onclick="doSearch()">search</button>
     <button onclick="refresh()">↻</button>
+    <select id="theme-select" onchange="setTheme(this.value)" title="Theme">
+      <option value="espresso">☕ Espresso</option>
+      <option value="latte">🥛 Latte</option>
+      <option value="github">🌙 GitHub Dark</option>
+      <option value="snow">☀ Snow</option>
+    </select>
   </header>
   <div id="list"></div>
   <div id="detail"><div class="empty">Select a thread.</div></div>
   <div id="live"></div>
 
 <script>
+// --- Theme — espresso (warm dark, default) · latte (warm light) ·
+//     github (cold dark) · snow (white light). Persisted to localStorage. ---
+const THEMES = ["espresso", "latte", "github", "snow"];
+function applyTheme(t) {
+  if (!THEMES.includes(t)) t = "espresso";
+  if (t === "espresso") delete document.documentElement.dataset.theme; // espresso = :root default
+  else document.documentElement.dataset.theme = t;
+  const sel = document.getElementById("theme-select");
+  if (sel) sel.value = t;
+}
+function setTheme(t) { localStorage.setItem("luwak-theme", t); applyTheme(t); }
+applyTheme(localStorage.getItem("luwak-theme") || "espresso");
+
 let mode = "threads";
 let threads = [], rows = [], hits = [];
 let activeThread = null, thread = null;
