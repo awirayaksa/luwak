@@ -130,6 +130,25 @@
   .part.thinking { background: var(--thinking-bg); } .part.thinking .pt { color: var(--thinking); }
   .part.tool_call { background: var(--tint-call); } .part.tool_call .pt { color: var(--tool); }
   .part.tool_result { background: var(--tint-result); } .part.tool_result .pt { color: var(--accent); }
+  /* Rendered-markdown response parts (Threads · resp · pretty · md). */
+  .part.md { white-space: normal; }
+  .part.md > :first-child { margin-top: 0; }
+  .part.md > :last-child { margin-bottom: 0; }
+  .part.md p { margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+  .part.md h1, .part.md h2, .part.md h3, .part.md h4, .part.md h5, .part.md h6 {
+    color: var(--text); text-transform: none; letter-spacing: 0; margin: 14px 0 6px; line-height: 1.3; }
+  .part.md h1.md-h { font-size: 17px; } .part.md h2.md-h { font-size: 15px; }
+  .part.md h3.md-h { font-size: 14px; } .part.md h4.md-h, .part.md h5.md-h, .part.md h6.md-h { font-size: 13px; }
+  .part.md ul, .part.md ol { margin: 0 0 8px; padding-left: 22px; }
+  .part.md li { margin: 2px 0; }
+  .part.md code { background: var(--raised); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+  .part.md pre.md-pre { background: var(--raised); border: 1px solid var(--border); border-radius: 7px;
+    padding: 10px; margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; overflow-x: auto; }
+  .part.md pre.md-pre code { background: none; border: 0; padding: 0; }
+  .part.md blockquote { margin: 0 0 8px; padding: 2px 0 2px 10px; border-left: 3px solid var(--border); color: var(--muted); }
+  .part.md a { color: var(--accent); }
+  .part.md strong { color: var(--text); font-weight: 600; }
+  .part.md hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
   #live { position: fixed; bottom: 16px; right: 16px; width: 460px; max-height: 320px; overflow: auto;
           background: var(--panel); border: 1px solid var(--accent); border-radius: 12px; box-shadow: var(--shadow);
           padding: 10px 12px; display: none; z-index: 10; }
@@ -181,7 +200,11 @@ let activeThread = null, thread = null;
 let activeId = null, detail = null, messages = [], tab = "parsed", pretty = true;
 
 // Composable lenses for the conversation view; applied as a pipeline.
-let lens = { scope: "both", roles: { system: true, user: true, assistant: true, tool: true }, highlight: "", filterOut: "", raw: false };
+let lens = { scope: "both", roles: { system: true, user: true, assistant: true, tool: true }, highlight: "", filterOut: "", raw: false, markdown: false };
+
+// Markdown rendering only makes sense for the assistant's prose, so it's
+// offered only when isolating the response in pretty mode.
+const mdActive = () => lens.scope === "response" && !lens.raw && lens.markdown;
 
 const $ = (id) => document.getElementById(id);
 const welcome = (msg) => `<div class="welcome"><img src="/assets/luwak-logo.png" alt="luwak — llm proxy · log viewer" /><div>${msg}</div></div>`;
@@ -266,13 +289,56 @@ function hl(text) {
 
 function renderPart(p, useLens) {
   if (useLens && lens.raw) return `<div class="part ${p.type}"><div class="pt">${p.type}</div>${esc(JSON.stringify(p))}</div>`;
-  let inner;
-  if (p.type === "text" || p.type === "thinking") inner = useLens ? hl(p.text || "") : esc(p.text || "");
+  let inner, md = "";
+  if (p.type === "text" || p.type === "thinking") {
+    // Markdown wins over highlight: rendered HTML and <mark> injection don't mix.
+    if (useLens && mdActive()) { inner = renderMarkdown(p.text || ""); md = " md"; }
+    else inner = useLens ? hl(p.text || "") : esc(p.text || "");
+  }
   else if (p.type === "tool_call") inner = esc(p.name) + "(" + esc(JSON.stringify(p.args)) + ")";
   else if (p.type === "tool_result") inner = esc(JSON.stringify(p.content));
   else if (p.type === "image") inner = esc("[image " + p.ref + "]");
   else inner = esc(JSON.stringify(p.raw ?? p));
-  return `<div class="part ${p.type}"><div class="pt">${p.type}</div>${inner}</div>`;
+  return `<div class="part ${p.type}${md}"><div class="pt">${p.type}</div>${inner}</div>`;
+}
+
+// Minimal, self-contained Markdown -> HTML for assistant prose. Escapes first,
+// then applies a safe subset (no raw HTML passthrough); links open in a new tab.
+// Fenced code is split out structurally so inline rules never touch it.
+function renderMarkdown(src) {
+  return String(src)
+    .split(/(```[^\n]*\n?[\s\S]*?```)/)
+    .map((seg) => {
+      const fence = seg.match(/^```[^\n]*\n?([\s\S]*?)```$/);
+      if (fence) return `<pre class="md-pre"><code>${esc(fence[1].replace(/\n$/, ""))}</code></pre>`;
+      return renderMdBlocks(seg);
+    })
+    .join("");
+}
+
+function renderMdBlocks(src) {
+  const inline = (t) => esc(t)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, "$1<em>$2</em>")
+    .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  const out = [];
+  let list = null; // "ul" | "ol" | null
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  for (const line of src.split(/\r?\n/)) {
+    let m;
+    if (/^\s*$/.test(line)) { closeList(); }
+    else if (m = line.match(/^\s*(#{1,6})\s+(.*)$/)) { closeList(); const n = m[1].length; out.push(`<h${n} class="md-h">${inline(m[2].trim())}</h${n}>`); }
+    else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { closeList(); out.push("<hr/>"); }
+    else if (m = line.match(/^\s*[-*+]\s+(.*)$/)) { if (list !== "ul") { closeList(); out.push("<ul>"); list = "ul"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else if (m = line.match(/^\s*\d+\.\s+(.*)$/)) { if (list !== "ol") { closeList(); out.push("<ol>"); list = "ol"; } out.push(`<li>${inline(m[1])}</li>`); }
+    else if (m = line.match(/^\s*>\s?(.*)$/)) { closeList(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); }
+    else { closeList(); out.push(`<p>${inline(line)}</p>`); }
+  }
+  closeList();
+  return out.join("\n");
 }
 
 function itemText(c) { return c.parts.map(p => p.text ?? JSON.stringify(p)).join(" "); }
@@ -301,6 +367,9 @@ function renderThread() {
       ${roleBtn("system")}${roleBtn("user")}${roleBtn("assistant")}${roleBtn("tool")}
       <span style="width:8px"></span>
       <button class="${lens.raw ? "active" : ""}" onclick="lens.raw=!lens.raw;renderThread()">${lens.raw ? "raw" : "pretty"}</button>
+      ${lens.scope === "response" && !lens.raw
+        ? `<button class="${lens.markdown ? "active" : ""}" onclick="lens.markdown=!lens.markdown;renderThread()" title="Render the response as formatted Markdown">md</button>`
+        : ""}
       <input id="hl" type="search" placeholder="highlight…" value="${esc(lens.highlight)}"
              style="flex:0 1 140px" oninput="lens.highlight=this.value;renderConv()" />
       <input id="fo" type="search" placeholder="filter-out…" value="${esc(lens.filterOut)}"

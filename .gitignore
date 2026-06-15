@@ -4,6 +4,7 @@ luwak.db-wal
 luwak.db-shm
 luwak
 luwak.exe
+luwak.yaml
 *.log
 
 .smoke/*.db*
