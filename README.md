@@ -13,13 +13,6 @@
   analyze logs step by step. · 🏗 <a href="./DESIGN.md"><b>Architecture</b></a>
 </p>
 
-> **Status: M5 — MVP complete.** Anthropic + OpenAI adapters (OpenAI-compatible
-> providers are config-only), reverse proxy + tee streaming + full raw capture
-> (zstd) into SQLite, normalized canonical conversation model, FTS5 search,
-> `reparse`, conversation threading with a deduped conversation view + composable
-> lenses, **live token streaming** to the viewer, themeable UI, and **redacted
-> export**.
-
 ---
 
 ## How it works
