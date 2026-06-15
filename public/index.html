@@ -71,7 +71,7 @@
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
          background: var(--bg); color: var(--text); height: 100vh; display: grid;
-         grid-template-columns: 400px 1fr; }
+         grid-template-columns: 400px 1fr; grid-template-rows: auto 1fr; }
   header { grid-column: 1 / -1; padding: 8px 14px; background: var(--panel);
            border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
   header .logo { width: 24px; height: 24px; display: block; }
@@ -89,7 +89,7 @@
            padding: 4px 8px; font: inherit; cursor: pointer; }
   select:hover { border-color: var(--accent); }
   select:focus { outline: none; border-color: var(--accent); }
-  #list { overflow: auto; border-right: 1px solid var(--border); }
+  #list { overflow: auto; min-height: 0; border-right: 1px solid var(--border); }
   .row { padding: 8px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
   .row:hover { background: var(--hover); }
   .row.active { background: var(--active-bg); border-left: 3px solid var(--accent); padding-left: 9px; }
@@ -104,8 +104,12 @@
   .tag { font-size: 10px; padding: 0 5px; border-radius: 8px; background: var(--border); color: var(--muted); }
   .tag.stream { background: var(--accent-soft); color: var(--accent); }
   .tag.partial, .tag.branch { background: var(--danger-soft); color: var(--danger); }
-  #detail { overflow: auto; padding: 14px; }
+  #detail { overflow: auto; min-height: 0; padding: 14px; }
   #detail .empty { color: var(--muted); margin-top: 40px; text-align: center; }
+  /* Brand splash shown on the empty/welcome panel. */
+  .welcome { display: flex; flex-direction: column; align-items: center; justify-content: center;
+             height: 100%; color: var(--muted); gap: 14px; }
+  .welcome img { width: min(360px, 60%); height: auto; opacity: .92; }
   .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
   .tabs .spacer { flex: 1; }
   h3 { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
@@ -154,7 +158,7 @@
     </select>
   </header>
   <div id="list"></div>
-  <div id="detail"><div class="empty">Select a thread.</div></div>
+  <div id="detail"><div class="welcome"><img src="/assets/luwak-logo.png" alt="luwak — llm proxy · log viewer" /><div>Select a thread.</div></div></div>
   <div id="live"></div>
 
 <script>
@@ -180,6 +184,7 @@ let activeId = null, detail = null, messages = [], tab = "parsed", pretty = true
 let lens = { scope: "both", roles: { system: true, user: true, assistant: true, tool: true }, highlight: "", filterOut: "", raw: false };
 
 const $ = (id) => document.getElementById(id);
+const welcome = (msg) => `<div class="welcome"><img src="/assets/luwak-logo.png" alt="luwak — llm proxy · log viewer" /><div>${msg}</div></div>`;
 const cls = (s) => "status-" + String(s)[0];
 const when = (ms) => new Date(ms).toLocaleString();
 const esc = (s) => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
@@ -194,13 +199,13 @@ async function refresh() {
     renderList();
     const keep = activeThread && threads.some(t => t.id === activeThread) ? activeThread : threads[0]?.id;
     if (keep) showThread(keep);
-    else $("detail").innerHTML = '<div class="empty">No threads yet.</div>';
+    else $("detail").innerHTML = welcome("No threads yet.");
   } else if (mode === "feed") {
     rows = await (await fetch("/api/exchanges")).json();
     renderList();
     const keep = activeId && rows.some(r => r.id === activeId) ? activeId : rows[0]?.id;
     if (keep) select(keep);
-    else $("detail").innerHTML = '<div class="empty">No exchanges yet.</div>';
+    else $("detail").innerHTML = welcome("No exchanges yet.");
   } else {
     renderList();
   }
