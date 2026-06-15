@@ -1,0 +1,9 @@
+node_modules/
+luwak.db
+luwak.db-wal
+luwak.db-shm
+luwak
+luwak.exe
+*.log
+
+.smoke/*.db*

@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>luwak</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+         background: #0e1116; color: #d7dde5; height: 100vh; display: grid;
+         grid-template-columns: 400px 1fr; }
+  header { grid-column: 1 / -1; padding: 8px 14px; background: #161b22; border-bottom: 1px solid #2a313c;
+           display: flex; align-items: center; gap: 10px; }
+  header b { color: #f0f6fc; font-size: 14px; }
+  input[type=search] { flex: 1; background: #0e1116; color: #d7dde5; border: 1px solid #30363d;
+           border-radius: 6px; padding: 5px 10px; font: inherit; }
+  button { background: #21262d; color: #adbac7; border: 1px solid #30363d; border-radius: 6px;
+           padding: 4px 10px; cursor: pointer; font: inherit; }
+  button.active { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+  #list { overflow: auto; border-right: 1px solid #2a313c; }
+  .row { padding: 8px 12px; border-bottom: 1px solid #1c222b; cursor: pointer; }
+  .row:hover { background: #161b22; }
+  .row.active { background: #1f6feb22; border-left: 2px solid #1f6feb; }
+  .row .top { display: flex; justify-content: space-between; gap: 8px; }
+  .row .method { color: #58a6ff; }
+  .row .status-2 { color: #3fb950; } .row .status-4, .row .status-5 { color: #f85149; }
+  .row .path, .row .ttl { color: #adbac7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .ttl { font-size: 13px; color: #e6edf3; margin-bottom: 2px; }
+  .row .meta { color: #768390; font-size: 11px; }
+  .row .snip { color: #adbac7; font-size: 12px; }
+  .row .snip mark { background: #bb800966; color: #f0f6fc; }
+  .tag { font-size: 10px; padding: 0 5px; border-radius: 8px; background: #30363d; color: #adbac7; }
+  .tag.stream { background: #1f6feb33; color: #79c0ff; }
+  .tag.partial, .tag.branch { background: #f8514933; color: #ff7b72; }
+  #detail { overflow: auto; padding: 14px; }
+  #detail .empty { color: #768390; margin-top: 40px; text-align: center; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 10px; flex-wrap: wrap; }
+  .tabs .spacer { flex: 1; }
+  h3 { color: #768390; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
+  pre { background: #161b22; border: 1px solid #2a313c; border-radius: 6px; padding: 10px;
+        white-space: pre-wrap; word-break: break-word; overflow-x: auto; margin: 0; }
+  .kv { color: #768390; } .kv b { color: #adbac7; font-weight: normal; }
+  .msg { border: 1px solid #2a313c; border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .msg .hd { padding: 4px 10px; background: #161b22; display: flex; gap: 8px; align-items: center; }
+  .role { font-size: 10px; padding: 1px 7px; border-radius: 8px; text-transform: uppercase; letter-spacing: .04em; }
+  .role.system { background: #6e768166; color: #d7dde5; }
+  .role.user { background: #1f6feb33; color: #79c0ff; }
+  .role.assistant { background: #3fb95033; color: #56d364; }
+  .role.tool { background: #bb800933; color: #e3b341; }
+  .src { color: #768390; font-size: 11px; }
+  .marker { font-size: 10px; color: #ff7b72; border: 1px solid #f8514955; border-radius: 8px; padding: 1px 6px; }
+  .part { padding: 8px 10px; border-top: 1px solid #1c222b; }
+  .part .pt { color: #768390; font-size: 10px; text-transform: uppercase; margin-bottom: 3px; }
+  .part.thinking { background: #1c1a2b; } .part.thinking .pt { color: #b39ddb; }
+  .part.tool_call { background: #20180e; } .part.tool_call .pt { color: #e3b341; }
+  .part.tool_result { background: #0e1a14; } .part.tool_result .pt { color: #56d364; }
+  #live { position: fixed; bottom: 16px; right: 16px; width: 460px; max-height: 320px; overflow: auto;
+          background: #10161f; border: 1px solid #1f6feb; border-radius: 10px; box-shadow: 0 8px 30px #000a;
+          padding: 10px 12px; display: none; z-index: 10; }
+  #live.on { display: block; }
+  #live .lhd { color: #79c0ff; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px;
+               display: flex; align-items: center; gap: 6px; }
+  #live .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  #live pre { background: transparent; border: 0; padding: 0; max-height: 260px; }
+</style>
+</head>
+<body>
+  <header>
+    <b>luwak</b>
+    <button id="m-threads" onclick="setMode('threads')">Threads</button>
+    <button id="m-feed" onclick="setMode('feed')">Feed</button>
+    <input id="q" type="search" placeholder="search messages (FTS)…" />
+    <button onclick="doSearch()">search</button>
+    <button onclick="refresh()">↻</button>
+  </header>
+  <div id="list"></div>
+  <div id="detail"><div class="empty">Select a thread.</div></div>
+  <div id="live"></div>
+
+<script>
+let mode = "threads";
+let threads = [], rows = [], hits = [];
+let activeThread = null, thread = null;
+let activeId = null, detail = null, messages = [], tab = "parsed", pretty = true;
+
+// Composable lenses for the conversation view; applied as a pipeline.
+let lens = { scope: "both", roles: { system: true, user: true, assistant: true, tool: true }, highlight: "", filterOut: "", raw: false };
+
+const $ = (id) => document.getElementById(id);
+const cls = (s) => "status-" + String(s)[0];
+const when = (ms) => new Date(ms).toLocaleString();
+const esc = (s) => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
+
+function setMode(m) { mode = m; activeThread = null; activeId = null; refresh(); }
+
+async function refresh() {
+  $("m-threads").classList.toggle("active", mode === "threads");
+  $("m-feed").classList.toggle("active", mode === "feed");
+  if (mode === "threads") {
+    threads = await (await fetch("/api/threads")).json();
+    renderList();
+    const keep = activeThread && threads.some(t => t.id === activeThread) ? activeThread : threads[0]?.id;
+    if (keep) showThread(keep);
+    else $("detail").innerHTML = '<div class="empty">No threads yet.</div>';
+  } else if (mode === "feed") {
+    rows = await (await fetch("/api/exchanges")).json();
+    renderList();
+    const keep = activeId && rows.some(r => r.id === activeId) ? activeId : rows[0]?.id;
+    if (keep) select(keep);
+    else $("detail").innerHTML = '<div class="empty">No exchanges yet.</div>';
+  } else {
+    renderList();
+  }
+}
+
+async function doSearch() {
+  const q = $("q").value.trim();
+  if (!q) return;
+  hits = await (await fetch("/api/search?q=" + encodeURIComponent(q))).json();
+  mode = "search";
+  $("m-threads").classList.remove("active"); $("m-feed").classList.remove("active");
+  renderList();
+}
+$("q").addEventListener("keydown", e => { if (e.key === "Enter") doSearch(); });
+
+function renderList() {
+  const el = $("list");
+  if (mode === "threads") {
+    el.innerHTML = threads.map(t => `
+      <div class="row ${t.id === activeThread ? "active" : ""}" onclick="showThread(${t.id})">
+        <div class="ttl">${esc(t.title || "(no user text)")}</div>
+        <div class="meta">#${t.id} · ${esc(t.model || t.provider_id)} · ${t.exchange_count} turns · ${when(t.started_ts)}</div>
+      </div>`).join("");
+  } else if (mode === "feed") {
+    el.innerHTML = rows.map(r => `
+      <div class="row ${r.id === activeId ? "active" : ""}" onclick="select(${r.id})">
+        <div class="top"><span><span class="method">${r.method}</span> <span class="${cls(r.status)}">${r.status}</span></span>
+          <span class="meta">${new Date(r.ts_start).toLocaleTimeString()}</span></div>
+        <div class="path" title="${r.req_path}">${r.req_path}</div>
+        <div class="meta">${r.provider_id}
+          ${r.is_streaming ? '<span class="tag stream">stream</span>' : ""}
+          ${r.incomplete ? '<span class="tag partial">partial</span>' : ""}
+          · ${(r.resp_bytes/1024).toFixed(1)}kB</div>
+      </div>`).join("");
+  } else {
+    el.innerHTML = hits.length ? hits.map(h => `
+      <div class="row" onclick="openExchange(${h.exchange_id})">
+        <div class="top"><span class="role ${h.role}">${h.role}</span><span class="meta">#${h.exchange_id} ${h.source}</span></div>
+        <div class="snip">${esc(h.snippet).replace(/\[/g,"<mark>").replace(/\]/g,"</mark>")}</div>
+      </div>`).join("") : '<div class="row meta">no matches</div>';
+  }
+}
+
+// --- Thread (conversation) view ---
+async function showThread(id) {
+  activeThread = id;
+  renderList();
+  thread = await (await fetch("/api/threads/" + id)).json();
+  renderThread();
+}
+
+function hl(text) {
+  const e = esc(text);
+  if (!lens.highlight) return e;
+  const re = new RegExp(lens.highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  return e.replace(re, m => "<mark>" + m + "</mark>");
+}
+
+function renderPart(p, useLens) {
+  if (useLens && lens.raw) return `<div class="part ${p.type}"><div class="pt">${p.type}</div>${esc(JSON.stringify(p))}</div>`;
+  let inner;
+  if (p.type === "text" || p.type === "thinking") inner = useLens ? hl(p.text || "") : esc(p.text || "");
+  else if (p.type === "tool_call") inner = esc(p.name) + "(" + esc(JSON.stringify(p.args)) + ")";
+  else if (p.type === "tool_result") inner = esc(JSON.stringify(p.content));
+  else if (p.type === "image") inner = esc("[image " + p.ref + "]");
+  else inner = esc(JSON.stringify(p.raw ?? p));
+  return `<div class="part ${p.type}"><div class="pt">${p.type}</div>${inner}</div>`;
+}
+
+function itemText(c) { return c.parts.map(p => p.text ?? JSON.stringify(p)).join(" "); }
+
+function applyLens(items) {
+  const fo = lens.filterOut.toLowerCase();
+  return items.filter(c =>
+    (lens.scope === "both" || c.source === lens.scope) &&
+    lens.roles[c.role] &&
+    !(fo && itemText(c).toLowerCase().includes(fo)));
+}
+
+const roleBtn = (r) => `<button class="${lens.roles[r] ? "active" : ""}" onclick="lens.roles['${r}']=!lens.roles['${r}'];renderThread()">${r}</button>`;
+const scopeBtn = (s, label) => `<button class="${lens.scope === s ? "active" : ""}" onclick="lens.scope='${s}';renderThread()">${label}</button>`;
+
+function renderThread() {
+  const t = thread; if (!t) return;
+  const branchy = t.exchanges.filter(e => e.relation === "branch").length;
+  $("detail").innerHTML = `
+    <div class="kv">thread <b>#${t.id}</b> · ${esc(t.model || "?")} · ${t.exchanges.length} exchanges
+      · ${t.conversation.length} deduped messages
+      ${branchy ? `· <span class="marker">${branchy} branch/compaction</span>` : ""}</div>
+    <div class="tabs" style="margin-top:10px">
+      ${scopeBtn("both", "both")}${scopeBtn("request", "req")}${scopeBtn("response", "resp")}
+      <span style="width:8px"></span>
+      ${roleBtn("system")}${roleBtn("user")}${roleBtn("assistant")}${roleBtn("tool")}
+      <span style="width:8px"></span>
+      <button class="${lens.raw ? "active" : ""}" onclick="lens.raw=!lens.raw;renderThread()">${lens.raw ? "raw" : "pretty"}</button>
+      <input id="hl" type="search" placeholder="highlight…" value="${esc(lens.highlight)}"
+             style="flex:0 1 140px" oninput="lens.highlight=this.value;renderConv()" />
+      <input id="fo" type="search" placeholder="filter-out…" value="${esc(lens.filterOut)}"
+             style="flex:0 1 140px" oninput="lens.filterOut=this.value;renderConv()" />
+    </div>
+    <div id="conv"></div>`;
+  renderConv();
+}
+
+function renderConv() {
+  const items = applyLens(thread.conversation);
+  $("conv").innerHTML = items.length ? items.map(c => `
+    <div class="msg">
+      <div class="hd">
+        <span class="role ${c.role}">${c.role}</span>
+        <span class="src">${c.source} · #${c.exchangeId}</span>
+        ${c.marker ? `<span class="marker">⚠ ${esc(c.marker)}</span>` : ""}
+      </div>
+      ${c.parts.map(p => renderPart(p, true)).join("")}
+    </div>`).join("") : '<div class="empty">No messages match the current lenses.</div>';
+}
+
+// --- Feed (raw exchange) view ---
+function openExchange(id) { mode = "feed"; tab = "parsed"; renderList(); select(id); }
+
+async function select(id) {
+  activeId = id;
+  if (mode === "feed") renderList();
+  detail = await (await fetch("/api/exchanges/" + id)).json();
+  messages = await (await fetch("/api/exchanges/" + id + "/messages")).json();
+  renderDetail();
+}
+
+function fmt(body) { if (!pretty) return body; try { return JSON.stringify(JSON.parse(body), null, 2); } catch { return body; } }
+
+function renderDetail() {
+  const e = detail; if (!e) return;
+  let main;
+  if (tab === "parsed") {
+    main = messages.length ? messages.map(m => `
+      <div class="msg"><div class="hd"><span class="role ${m.role}">${m.role}</span><span class="src">${m.source} · #${m.seq}</span></div>
+        ${m.parts.map(renderPart).join("")}</div>`).join("")
+      : '<div class="empty">No normalized messages.</div>';
+  } else {
+    const headers = tab === "request" ? e.req_headers : e.resp_headers;
+    const body = tab === "request" ? e.req_body : e.resp_body;
+    main = `
+      <div class="kv"><b>${e.method}</b> ${esc(e.upstream_url)}<br/>
+        status <b>${e.status}</b> · ${e.ts_end - e.ts_start}ms
+        ${e.is_streaming ? "· " + (e.chunk_timings?.length || 0) + " chunks" : ""}
+        ${e.incomplete ? '· <span style="color:#ff7b72">incomplete</span>' : ""}</div>
+      <h3>Headers</h3><pre>${esc(Object.entries(headers).map(([k,v]) => k + ": " + v).join("\n"))}</pre>
+      <h3>Body</h3><pre>${esc(fmt(body))}</pre>`;
+  }
+  $("detail").innerHTML = `
+    <div class="tabs">
+      <button class="${tab==='parsed'?'active':''}" onclick="tab='parsed';renderDetail()">Parsed</button>
+      <button class="${tab==='request'?'active':''}" onclick="tab='request';renderDetail()">Request</button>
+      <button class="${tab==='response'?'active':''}" onclick="tab='response';renderDetail()">Response</button>
+      <span class="spacer"></span>
+      <button onclick="window.open('/api/exchanges/' + detail.id + '/export')">export ⤓</button>
+      ${tab!=='parsed' ? `<button class="${pretty?'active':''}" onclick="pretty=!pretty;renderDetail()">${pretty?'pretty':'raw'}</button>` : ""}
+    </div>${main}`;
+}
+
+// --- Live tail (SSE) ---
+const liveStreams = {};
+function extractDelta(sse) {
+  let out = "";
+  for (const line of sse.split(/\r?\n/)) {
+    if (!line.startsWith("data:")) continue;
+    const j = line.slice(5).trim();
+    if (!j || j === "[DONE]") continue;
+    try {
+      const o = JSON.parse(j);
+      if (typeof o.delta?.text === "string") out += o.delta.text;          // anthropic text_delta
+      else if (typeof o.delta?.thinking === "string") out += o.delta.thinking;
+      const c = o.choices?.[0]?.delta?.content;                            // openai
+      if (typeof c === "string") out += c;
+    } catch { /* partial/keepalive */ }
+  }
+  return out;
+}
+function renderLive() {
+  const ids = Object.keys(liveStreams);
+  const el = $("live");
+  if (!ids.length) { el.classList.remove("on"); return; }
+  el.classList.add("on");
+  el.innerHTML = ids.map(id => {
+    const s = liveStreams[id];
+    return `<div class="lhd"><span class="dot"></span>live · ${esc(s.meta.provider)} ${esc(s.meta.path || "")}</div><pre>${esc(s.text || "…")}</pre>`;
+  }).join("<hr/>");
+  el.scrollTop = el.scrollHeight;
+}
+try {
+  const esrc = new EventSource("/api/stream");
+  esrc.onmessage = (e) => {
+    let ev; try { ev = JSON.parse(e.data); } catch { return; }
+    if (ev.type === "start") { liveStreams[ev.streamId] = { meta: ev, text: "" }; renderLive(); }
+    else if (ev.type === "chunk") { const s = liveStreams[ev.streamId]; if (s) { s.text += extractDelta(ev.text); renderLive(); } }
+    else if (ev.type === "end") { delete liveStreams[ev.streamId]; renderLive(); refresh(); }
+  };
+} catch { /* SSE unavailable */ }
+
+refresh();
+</script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+listen: 127.0.0.1:8088
+db: ./.smoke/smoke.db
+providers:
+  - id: testprov
+    prefix: /test
+    upstream: http://127.0.0.1:9999
+    adapter: anthropic
+  - id: oai
+    prefix: /oai
+    upstream: http://127.0.0.1:9998
+    adapter: openai
+retention_days: 0

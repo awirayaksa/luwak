@@ -1,0 +1,32 @@
+# luwak configuration
+# Bind to loopback only by default: the proxy forwards live API keys upstream,
+# so it must never be an open relay. Change deliberately.
+listen: 127.0.0.1:8080
+
+# Where the capture database lives.
+db: ./luwak.db
+
+# M1 ships the Anthropic provider only. Add more by appending entries:
+# OpenAI-compatible providers (groq, together, openrouter, ollama, ...) reuse
+# the same adapter; genuinely different wire formats need an adapter module.
+providers:
+  - id: anthropic
+    prefix: /anthropic
+    upstream: https://api.anthropic.com
+    adapter: anthropic
+  - id: openai
+    prefix: /openai
+    upstream: https://api.openai.com
+    adapter: openai
+  # OpenAI-compatible providers are config-only: reuse the openai adapter.
+  - id: groq
+    prefix: /groq
+    upstream: https://api.groq.com/openai
+    adapter: openai
+  - id: opencode-go
+    prefix: /opencode-go
+    upstream: https://opencode.ai/zen/go
+    adapter: openai
+
+# Raw retention (days). 0 = keep forever. (Pruning lands in a later milestone.)
+retention_days: 30

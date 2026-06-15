@@ -1,0 +1,14 @@
+{
+  "name": "luwak",
+  "version": "0.1.0",
+  "description": "A fast, light LLM proxy that captures raw request/response traffic, with a viewer for analysis.",
+  "type": "module",
+  "module": "src/index.ts",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts",
+    "reparse": "bun run src/index.ts reparse",
+    "export": "bun run src/index.ts export",
+    "build": "bun build --compile src/index.ts --outfile luwak"
+  }
+}
