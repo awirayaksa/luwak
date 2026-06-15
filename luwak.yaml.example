@@ -1,0 +1,60 @@
+# luwak configuration — copy to luwak.yaml and edit.
+#
+# Override the config path with the LUWAK_CONFIG env var.
+
+# "host:port" the server binds to. Bind to loopback only by default: the proxy
+# forwards live API keys upstream, so it must never be an open relay. Change
+# deliberately (e.g. 0.0.0.0:8080) only on a network you trust.
+listen: 127.0.0.1:8080
+
+# Where the capture (SQLite) database lives.
+db: ./luwak.db
+
+# Raw retention (days). 0 = keep forever.
+retention_days: 30
+
+# Upstreams. Point your client at http://<listen>/<prefix> and luwak forwards
+# to `upstream`, capturing the exchange. OpenAI-compatible providers (groq,
+# together, openrouter, ollama, ...) reuse the openai adapter; genuinely
+# different wire formats need their own adapter module.
+#
+# Each provider entry:
+#   id         unique name, used in the viewer and as the adapter key
+#   prefix     path luwak answers on; must start with "/"
+#   upstream   base URL to forward to
+#   adapter    parser layer: "anthropic" or "openai"
+#   tls_verify (optional) verify the upstream's TLS certificate. Defaults to
+#              true. Set to false ONLY for an upstream behind a self-signed
+#              cert (e.g. an OpenAI-compatible server on the local network).
+#              Disabling cert checks exposes that connection to MITM, so keep
+#              it true for anything reached over an untrusted network.
+providers:
+  - id: anthropic
+    prefix: /anthropic
+    upstream: https://api.anthropic.com
+    adapter: anthropic
+
+  - id: openai
+    prefix: /openai
+    upstream: https://api.openai.com
+    adapter: openai
+
+  # OpenAI-compatible provider, config-only: reuse the openai adapter.
+  - id: groq
+    prefix: /groq
+    upstream: https://api.groq.com/openai
+    adapter: openai
+
+  # Self-signed, OpenAI-compatible server on the local network: skip TLS verify.
+  - id: local-llm
+    prefix: /local-llm
+    upstream: https://192.168.1.50:8443/v1
+    adapter: openai
+    tls_verify: false
+
+# Redaction applied at the export/share boundary (optional).
+# redact:
+#   headers:
+#     - x-internal-token
+#   patterns:
+#     - "sk-[A-Za-z0-9]{20,}"

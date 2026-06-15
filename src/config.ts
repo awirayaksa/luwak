@@ -8,6 +8,13 @@ export interface ProviderConfig {
   upstream: string;
   /** Adapter id used by the (later) parser layer. Ignored by the M1 proxy. */
   adapter: string;
+  /**
+   * Verify the upstream's TLS certificate. Defaults to true. Set to false for
+   * upstreams behind a self-signed cert (e.g. an OpenAI-compatible server on
+   * the local network). Off by default would be an open invitation to MITM, so
+   * this must be opted out of per provider.
+   */
+  tls_verify?: boolean;
 }
 
 export interface RedactConfig {
@@ -51,7 +58,10 @@ export function loadConfig(path = "luwak.yaml"): Config {
   }
 
   // Longest prefix first so "/openai/v2" wins over "/openai".
-  const providers = [...raw.providers].sort((a, b) => b.prefix.length - a.prefix.length);
+  // Default tls_verify to true: skipping cert checks is opt-in per provider.
+  const providers = [...raw.providers]
+    .map((p) => ({ ...p, tls_verify: p.tls_verify ?? true }))
+    .sort((a, b) => b.prefix.length - a.prefix.length);
 
   return { ...DEFAULTS, ...raw, providers };
 }

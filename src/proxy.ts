@@ -57,6 +57,9 @@ export async function handleProxy(
       headers: fwdHeaders,
       body: reqBody.byteLength ? reqBody : undefined,
       redirect: "manual",
+      // Skip cert validation only when the provider explicitly opts out, e.g.
+      // a self-signed OpenAI-compatible server on the local network.
+      tls: { rejectUnauthorized: provider.tls_verify !== false },
     });
   } catch (err) {
     return new Response(`luwak: upstream fetch failed: ${String(err)}`, { status: 502 });
