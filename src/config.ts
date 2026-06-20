@@ -15,6 +15,31 @@ export interface ProviderConfig {
    * this must be opted out of per provider.
    */
   tls_verify?: boolean;
+  /**
+   * Opt-in translating mode. When set, luwak rewrites incoming Anthropic
+   * Messages API requests into OpenAI Chat Completions requests (and the
+   * responses back), so an Anthropic client like Claude Code can talk to an
+   * OpenAI-only upstream. Without it the provider stays a dumb passthrough.
+   */
+  translate?: "anthropic->openai";
+  /** Upstream chat path appended to `upstream` in translate mode. */
+  chat_path?: string;
+  /** Model-id mapping used in translate mode. `default` is required. */
+  models?: ModelMap;
+  /**
+   * Clamp the request's `max_tokens` to at most this value (translate mode).
+   * Claude Code asks for very large limits (e.g. 64000); some upstream models
+   * stall or misbehave with limits beyond their real output cap. Unset = pass
+   * the client's value through unchanged.
+   */
+  max_output_tokens?: number;
+}
+
+export interface ModelMap {
+  /** Upstream model id used for normal requests. */
+  default: string;
+  /** Upstream model id for Claude Code's small/fast (haiku-class) tier. */
+  small?: string;
 }
 
 export interface RedactConfig {
@@ -55,12 +80,25 @@ export function loadConfig(path = "luwak.yaml"): Config {
     if (!p.prefix.startsWith("/")) {
       throw new Error(`luwak: provider "${p.id}" prefix must start with "/" (got "${p.prefix}")`);
     }
+    if (p.translate !== undefined) {
+      if (p.translate !== "anthropic->openai") {
+        throw new Error(`luwak: provider "${p.id}" translate must be "anthropic->openai" (got "${p.translate}")`);
+      }
+      if (!p.models?.default) {
+        throw new Error(`luwak: translate provider "${p.id}" requires models.default`);
+      }
+    }
   }
 
   // Longest prefix first so "/openai/v2" wins over "/openai".
   // Default tls_verify to true: skipping cert checks is opt-in per provider.
+  // Default the chat path for translate providers.
   const providers = [...raw.providers]
-    .map((p) => ({ ...p, tls_verify: p.tls_verify ?? true }))
+    .map((p) => ({
+      ...p,
+      tls_verify: p.tls_verify ?? true,
+      ...(p.translate ? { chat_path: p.chat_path ?? "/v1/chat/completions" } : {}),
+    }))
     .sort((a, b) => b.prefix.length - a.prefix.length);
 
   return { ...DEFAULTS, ...raw, providers };

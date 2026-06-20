@@ -135,6 +135,10 @@ redact:
 | `providers[].prefix` | URL path prefix that selects this provider (longest match wins). |
 | `providers[].upstream` | Real API base URL traffic is forwarded to. |
 | `providers[].adapter` | Parser: `anthropic` or `openai`. |
+| `providers[].tls_verify` | Verify the upstream TLS cert. Default `true`; set `false` only for a self-signed upstream on a trusted network. |
+| `providers[].translate` | `anthropic->openai` to make this provider a translating bridge (see below). |
+| `providers[].chat_path` | (translate only) upstream chat path. Default `/v1/chat/completions`. |
+| `providers[].models` | (translate only) `{ default, small? }` upstream model ids. |
 | `retention_days` | Reserved for raw pruning (not yet enforced). |
 | `redact.headers` | Extra header names masked on export. |
 | `redact.patterns` | Extra regex patterns masked in exported bodies. |
@@ -150,6 +154,54 @@ redact:
 After editing `luwak.yaml`, restart luwak (use `bun dev` for auto-restart on
 file changes).
 
+### Translating bridge: Claude Code → an OpenAI-only provider
+
+Claude Code speaks the **Anthropic Messages API** (`POST /v1/messages`,
+streaming SSE). Many providers only speak the **OpenAI Chat Completions API**
+(`POST /v1/chat/completions`), so Claude Code can't talk to them directly. A
+provider with `translate: anthropic->openai` makes luwak bridge the two: it
+rewrites each incoming Anthropic request into an OpenAI request, forwards it,
+and translates the OpenAI response — including the streaming events — back into
+Anthropic format so Claude Code understands the reply.
+
+```yaml
+providers:
+  - id: zen
+    prefix: /zen
+    upstream: https://opencode.ai/zen/go   # base URL (no /v1/chat/completions)
+    adapter: openai                        # how the captured wire bytes parse
+    translate: anthropic->openai
+    chat_path: /v1/chat/completions        # optional; this is the default
+    models:
+      default: <upstream main model id>    # required
+      small: <upstream small/fast model id># used for haiku-class requests
+```
+
+Then point Claude Code at it and run normally:
+
+```sh
+export ANTHROPIC_BASE_URL=http://localhost:8080/zen
+# keep using your provider key as usual:
+export ANTHROPIC_API_KEY=<your provider key>
+```
+
+Notes:
+- **Model mapping.** Claude Code drives two tiers — a main model and a small
+  fast model (always a haiku-class id) for background tasks. luwak routes any
+  requested id containing `haiku` to `models.small` (if set), everything else to
+  `models.default`.
+- **Auth.** The key Claude Code sends as `x-api-key` is forwarded to the
+  upstream as `Authorization: Bearer <key>`.
+- **What's captured.** The viewer shows the **real upstream (OpenAI) exchange**
+  (translated request + OpenAI response), parsed by the `openai` adapter — this
+  is the wire truth. The Anthropic shape the client saw is reconstructed by the
+  translation, not stored separately.
+- **count_tokens.** Claude Code's `POST /v1/messages/count_tokens` has no OpenAI
+  equivalent; luwak answers it locally with a rough estimate.
+- This is an opt-in exception to luwak's "dumb proxy" rule (see
+  [DESIGN.md](../DESIGN.md)); plain (non-`translate`) providers still forward
+  bytes untouched.
+
 ---
 
 ## 4. Pointing clients at luwak
@@ -163,6 +215,7 @@ The rule: set the client's base URL to `http://localhost:8080` + the provider
 | Anthropic SDK | `ANTHROPIC_BASE_URL` | `http://localhost:8080/anthropic` |
 | OpenAI SDK | `OPENAI_BASE_URL` | `http://localhost:8080/openai/v1` |
 | Groq (OpenAI-compat) | `OPENAI_BASE_URL` | `http://localhost:8080/groq/v1` |
+| Claude Code → OpenAI-only provider | `ANTHROPIC_BASE_URL` | `http://localhost:8080/zen` (a `translate` provider — see [§3](#3-configuration-luwakyaml)) |
 
 API keys are unchanged — keep using your normal key env vars; luwak forwards
 them upstream untouched.
@@ -281,7 +334,8 @@ plus anything you add under `redact:` in the config.
 | Client errors with connection refused | luwak isn't running, or the base URL port/prefix is wrong. Check the startup banner. |
 | `no route for /…` (404) | The request path doesn't match any provider `prefix`. Verify the client base URL includes the prefix (e.g. `…/anthropic`). |
 | Requests work but nothing in the viewer | You set the base URL in a different shell than the client. Set it in the client's environment. |
-| Auth/401 from upstream | Your API key wasn't sent. luwak forwards keys as-is; confirm the client still has its key env var set. |
+| Auth/401 from upstream | Your API key wasn't sent. luwak forwards keys as-is; confirm the client still has its key env var set. For a `translate` provider, the `x-api-key` is sent upstream as `Authorization: Bearer` — make sure it's your *provider's* key. |
+| `translate` provider: 400/model errors | The upstream rejected the mapped model. Check `models.default`/`models.small` are valid ids for that provider. |
 | Streaming feels delayed | It shouldn't — luwak tees chunks through instantly. If it lags, you may be behind another buffering proxy. |
 | Conversation threading looks wrong | Context compaction/edits can break prefix chaining; check the `⚠` markers and fall back to the **Feed** (ground truth). Try `bun reparse`. |
 | DB getting large | Bodies are zstd-compressed already. Delete `luwak.db*` to reset, or archive it. (Automated retention pruning is planned.) |

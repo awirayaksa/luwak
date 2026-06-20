@@ -1,4 +1,5 @@
 import type { NormMessage, Part, Role } from "../model.ts";
+import { sseData } from "../sse.ts";
 import type { Adapter } from "./types.ts";
 
 interface ToolCall {
@@ -76,28 +77,12 @@ function normalizeMessage(m: Record<string, unknown>): NormMessage {
   return { role, parts };
 }
 
-/** Extract JSON payloads from SSE `data:` lines (ignoring `[DONE]`). */
-function sseData(body: string): Record<string, unknown>[] {
-  const out: Record<string, unknown>[] = [];
-  for (const line of body.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-    const json = line.slice(5).trim();
-    if (!json || json === "[DONE]") continue;
-    try {
-      out.push(JSON.parse(json));
-    } catch {
-      /* ignore */
-    }
-  }
-  return out;
-}
-
 /** Reassemble a streamed Chat Completion (choice 0) into one assistant message. */
 function reassemble(body: string): NormMessage[] {
   let text = "";
   const tools: { id?: string; name?: string; args: string }[] = [];
 
-  for (const ev of sseData(body)) {
+  for (const ev of sseData(body) as Record<string, unknown>[]) {
     const choice = (ev.choices as Array<Record<string, unknown>>)?.[0];
     const delta = choice?.delta as Record<string, unknown> | undefined;
     if (!delta) continue;

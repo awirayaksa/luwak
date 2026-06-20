@@ -28,6 +28,14 @@ retention_days: 30
 #              cert (e.g. an OpenAI-compatible server on the local network).
 #              Disabling cert checks exposes that connection to MITM, so keep
 #              it true for anything reached over an untrusted network.
+#   translate  (optional) "anthropic->openai" turns this provider into a
+#              translating bridge: an Anthropic Messages client (Claude Code)
+#              talks to it, and luwak rewrites requests/responses to/from the
+#              OpenAI Chat Completions wire format. Requires `models.default`.
+#   chat_path  (translate only) upstream chat path. Default /v1/chat/completions.
+#   models     (translate only) map Anthropic model ids to upstream ones:
+#                default  used for normal requests (required)
+#                small    used for Claude Code's small/fast (haiku-class) tier
 providers:
   - id: anthropic
     prefix: /anthropic
@@ -51,6 +59,21 @@ providers:
     upstream: https://192.168.1.50:8443/v1
     adapter: openai
     tls_verify: false
+
+  # Translating bridge: let Claude Code (Anthropic Messages API) drive an
+  # OpenAI-only provider. Point ANTHROPIC_BASE_URL at http://<listen>/zen and
+  # luwak rewrites /v1/messages <-> /v1/chat/completions in both directions.
+  # The captured exchange is the real upstream (OpenAI) traffic, so adapter is
+  # "openai". The client's x-api-key is forwarded as an OpenAI Bearer token.
+  - id: zen
+    prefix: /zen
+    upstream: https://opencode.ai/zen/go
+    adapter: openai
+    translate: anthropic->openai
+    chat_path: /v1/chat/completions
+    models:
+      default: <upstream model id for the main tier>
+      small: <upstream model id for the small/fast tier>
 
 # Redaction applied at the export/share boundary (optional).
 # redact:

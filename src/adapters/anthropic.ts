@@ -1,4 +1,5 @@
 import type { NormMessage, Part, Role } from "../model.ts";
+import { sseData } from "../sse.ts";
 import type { Adapter } from "./types.ts";
 
 /** A raw Anthropic content block (request or non-streaming response). */
@@ -64,22 +65,6 @@ function normalizeContent(content: unknown): Part[] {
 function normalizeMessage(role: Role, content: unknown): NormMessage {
   const parts = normalizeContent(content);
   return { role: resolveRole(role, parts), parts };
-}
-
-/** Extract the JSON payloads from `data:` lines of an SSE body. */
-function sseData(body: string): unknown[] {
-  const out: unknown[] = [];
-  for (const line of body.split(/\r?\n/)) {
-    if (!line.startsWith("data:")) continue;
-    const json = line.slice(5).trim();
-    if (!json || json === "[DONE]") continue;
-    try {
-      out.push(JSON.parse(json));
-    } catch {
-      /* ignore non-JSON keepalives */
-    }
-  }
-  return out;
 }
 
 /** Reassemble Anthropic streamed content blocks into Block[]. */
