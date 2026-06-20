@@ -49,6 +49,17 @@ export interface RedactConfig {
   patterns?: string[];
 }
 
+export interface TransparentConfig {
+  /** Enable the transparent MITM CONNECT proxy. */
+  enabled: boolean;
+  /** "host:port" the transparent proxy binds to. Default 127.0.0.1:8081. */
+  listen: string;
+  /** Path to the CA certificate (auto-generated if missing). */
+  ca_cert: string;
+  /** Path to the CA private key (auto-generated if missing). */
+  ca_key: string;
+}
+
 export interface Config {
   /** "host:port" the server binds to. Loopback by default. */
   listen: string;
@@ -59,6 +70,8 @@ export interface Config {
   retention_days: number;
   /** Redaction applied at the export/share boundary. */
   redact?: RedactConfig;
+  /** Transparent MITM proxy config (optional). */
+  transparent?: TransparentConfig;
 }
 
 const DEFAULTS = {
@@ -68,7 +81,20 @@ const DEFAULTS = {
 } satisfies Partial<Config>;
 
 export function loadConfig(path = "luwak.yaml"): Config {
-  const raw = Bun.YAML.parse(readFileSync(path, "utf8")) as Partial<Config>;
+  let raw: Partial<Config>;
+  try {
+    raw = Bun.YAML.parse(readFileSync(path, "utf8")) as Partial<Config>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `luwak: failed to parse config file ${path}\n` +
+      `  ${msg}\n` +
+      `  Common causes:\n` +
+      `    - Inconsistent indentation (YAML requires 2-space steps, no tabs)\n` +
+      `    - Uncommented section with wrong indentation\n` +
+      `    - Missing colon after a key`
+    );
+  }
 
   if (!raw.providers?.length) {
     throw new Error(`luwak: no providers defined in ${path}`);
@@ -87,6 +113,17 @@ export function loadConfig(path = "luwak.yaml"): Config {
       if (!p.models?.default) {
         throw new Error(`luwak: translate provider "${p.id}" requires models.default`);
       }
+      // Catch common mistake: copying the example config without replacing
+      // the placeholder model IDs.
+      for (const [key, val] of Object.entries(p.models)) {
+        if (val.includes("<") && val.includes(">")) {
+          throw new Error(
+            `luwak: provider "${p.id}" has a placeholder model for models.${key}: "${val}".\n` +
+            `  Replace it with a real model ID from your upstream provider.\n` +
+            `  Example: models: { default: "glm-5.2", small: "glm-5.2" }`
+          );
+        }
+      }
     }
   }
 
@@ -101,7 +138,21 @@ export function loadConfig(path = "luwak.yaml"): Config {
     }))
     .sort((a, b) => b.prefix.length - a.prefix.length);
 
-  return { ...DEFAULTS, ...raw, providers };
+  // Transparent proxy: validate if enabled, set defaults.
+  let transparent: TransparentConfig | undefined;
+  if (raw.transparent) {
+    const t = raw.transparent;
+    if (t.enabled) {
+      transparent = {
+        enabled: true,
+        listen: t.listen ?? "127.0.0.1:8081",
+        ca_cert: t.ca_cert ?? "./luwak-ca.crt",
+        ca_key: t.ca_key ?? "./luwak-ca.key",
+      };
+    }
+  }
+
+  return { ...DEFAULTS, ...raw, providers, transparent };
 }
 
 export function parseListen(listen: string): { hostname: string; port: number } {

@@ -81,3 +81,33 @@ providers:
 #     - x-internal-token
 #   patterns:
 #     - "sk-[A-Za-z0-9]{20,}"
+
+# Transparent MITM proxy (optional).
+#
+# When enabled, luwak also runs an HTTP CONNECT proxy that intercepts TLS
+# traffic to your configured upstreams — no client base-URL override needed.
+# Instead, set HTTPS_PROXY in the client's environment and install the
+# auto-generated CA certificate in your system trust store.
+#
+# Only hosts matching a provider's `upstream` hostname are intercepted;
+# all other HTTPS traffic is blind-tunneled (no capture, no MITM).
+#
+# Requires OpenSSL on PATH for certificate generation.
+#
+# To enable, uncomment ALL the lines below (remove the leading "# " from each).
+# Make sure the indentation is exactly 2 spaces per level:
+#
+# transparent:
+#   enabled: true
+#   listen: 127.0.0.1:8081
+#   ca_cert: ./luwak-ca.crt
+#   ca_key: ./luwak-ca.key
+#
+# Usage:
+#   1) Start luwak with transparent.enabled: true
+#   2) Install luwak-ca.crt in your trust store (or use tray menu > Install CA):
+#      - Windows:  certutil -addstore -user Root luwak-ca.crt
+#      - macOS:    security add-trusted-cert -d -r trustRoot -k login.keychain luwak-ca.crt
+#      - Linux:    cp luwak-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
+#   3) Set HTTPS_PROXY=http://127.0.0.1:8081 in your client's environment
+#   4) Use your client normally — no base URL changes needed

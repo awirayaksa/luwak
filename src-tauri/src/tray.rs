@@ -8,6 +8,72 @@ use tauri_plugin_autostart::ManagerExt;
 
 use crate::sidecar;
 
+pub fn install_ca_cert_internal(app: &AppHandle) -> Result<String, String> {
+    let config_path = sidecar::get_config_path(app);
+    let config_dir = config_path.parent().unwrap_or(std::path::Path::new("."));
+
+    let ca_cert_name = std::fs::read_to_string(&config_path)
+        .ok()
+        .and_then(|content| {
+            content.lines().find_map(|line| {
+                let line = line.trim();
+                if let Some(rest) = line.strip_prefix("ca_cert:") {
+                    return Some(rest.trim().to_string());
+                }
+                None
+            })
+        })
+        .unwrap_or_else(|| "luwak-ca.crt".to_string());
+
+    let ca_path = config_dir.join(&ca_cert_name);
+    if !ca_path.exists() {
+        return Err(format!(
+            "CA certificate not found at {}. Enable transparent mode in the config and restart the proxy first.",
+            ca_path.display()
+        ));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let ca_str = ca_path.to_string_lossy().to_string();
+        let result = std::process::Command::new("certutil")
+            .args(["-addstore", "-user", "Root", &ca_str])
+            .output()
+            .map_err(|e| format!("Failed to run certutil: {}", e))?;
+        if result.status.success() {
+            Ok("CA certificate installed to Windows trust store.".to_string())
+        } else {
+            Err(format!("certutil failed: {}", String::from_utf8_lossy(&result.stderr)))
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let ca_str = ca_path.to_string_lossy().to_string();
+        let result = std::process::Command::new("security")
+            .args(["add-trusted-cert", "-d", "-r", "trustRoot", "-k", "login.keychain", &ca_str])
+            .output()
+            .map_err(|e| format!("Failed to run security: {}", e))?;
+        if result.status.success() {
+            Ok("CA certificate installed to macOS login keychain.".to_string())
+        } else {
+            Err(format!("security command failed: {}", String::from_utf8_lossy(&result.stderr)))
+        }
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let ca_str = ca_path.to_string_lossy().to_string();
+        let result = std::process::Command::new("sh")
+            .args(["-c", &format!("cp '{}' /usr/local/share/ca-certificates/luwak-ca.crt && sudo update-ca-certificates", ca_str)])
+            .output()
+            .map_err(|e| format!("Failed to install CA: {}", e))?;
+        if result.status.success() {
+            Ok("CA certificate installed to system trust store.".to_string())
+        } else {
+            Err(format!("Installation failed: {}", String::from_utf8_lossy(&result.stderr)))
+        }
+    }
+}
+
 fn open_in_file_manager(path: &std::path::Path) {
     let path_str = path.to_string_lossy().to_string();
     #[cfg(target_os = "windows")]
@@ -85,6 +151,20 @@ pub fn create(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
+    let install_ca = MenuItem::with_id(
+        app,
+        "install_ca",
+        "Install CA Certificate",
+        true,
+        None::<&str>,
+    )?;
+    let view_logs = MenuItem::with_id(
+        app,
+        "view_logs",
+        "View Logs",
+        true,
+        None::<&str>,
+    )?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Luwak", true, None::<&str>)?;
 
@@ -98,6 +178,8 @@ pub fn create(app: &App) -> Result<(), Box<dyn std::error::Error>> {
             &autostart,
             &open_config,
             &open_data,
+            &install_ca,
+            &view_logs,
             &sep2,
             &quit,
         ],
@@ -143,6 +225,24 @@ pub fn create(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                     let folder = sidecar::data_folder(app);
                     let abs = std::fs::canonicalize(&folder).unwrap_or(folder);
                     open_in_file_manager(&abs);
+                }
+                "install_ca" => {
+                    let app_handle = app.clone();
+                    std::thread::spawn(move || {
+                        match install_ca_cert_internal(&app_handle) {
+                            Ok(msg) => println!("luwak: {}", msg),
+                            Err(e) => eprintln!("luwak: CA install failed: {}", e),
+                        }
+                    });
+                }
+                "view_logs" => {
+                    let log_path = sidecar::log_path(app);
+                    if log_path.exists() {
+                        open_file(&log_path);
+                    } else {
+                        let dir = log_path.parent().unwrap_or(std::path::Path::new("."));
+                        open_in_file_manager(dir);
+                    }
                 }
                 "quit" => {
                     sidecar::kill(app);

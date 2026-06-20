@@ -68,6 +68,48 @@ fn open_config_file(app: tauri::AppHandle) {
 }
 
 #[tauri::command]
+fn open_log_file(app: tauri::AppHandle) {
+    let log_path = sidecar::log_path(&app);
+    if log_path.exists() {
+        let abs = std::fs::canonicalize(&log_path).unwrap_or(log_path);
+        open_path_in_os(&abs, false);
+    }
+}
+
+#[tauri::command]
+fn get_log_path(app: tauri::AppHandle) -> String {
+    sidecar::log_path(&app).to_string_lossy().to_string()
+}
+
+#[tauri::command]
+fn install_ca_cert(app: tauri::AppHandle) -> Result<String, String> {
+    crate::tray::install_ca_cert_internal(&app)
+}
+
+#[tauri::command]
+fn get_ca_cert_path(app: tauri::AppHandle) -> Option<String> {
+    let config_path = sidecar::get_config_path(&app);
+    let config_dir = config_path.parent()?;
+    let ca_cert_name = std::fs::read_to_string(&config_path)
+        .ok()?
+        .lines()
+        .find_map(|line| {
+            let line = line.trim();
+            if let Some(rest) = line.strip_prefix("ca_cert:") {
+                return Some(rest.trim().to_string());
+            }
+            None
+        })
+        .unwrap_or_else(|| "luwak-ca.crt".to_string());
+    let ca_path = config_dir.join(&ca_cert_name);
+    if ca_path.exists() {
+        Some(ca_path.to_string_lossy().to_string())
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
 fn is_autostart_enabled(app: tauri::AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
 }
@@ -104,6 +146,10 @@ pub fn run() {
             restart_proxy,
             open_data_folder,
             open_config_file,
+            open_log_file,
+            get_log_path,
+            install_ca_cert,
+            get_ca_cert_path,
             is_autostart_enabled,
             set_autostart,
         ])

@@ -6,6 +6,8 @@ import { buildThreadView } from "./threading.ts";
 import { LiveBus } from "./live.ts";
 import { makeRedactor } from "./redact.ts";
 import type { ProxyTap } from "./proxy.ts";
+import { CertificateAuthority } from "./ca.ts";
+import { startTransparentProxy } from "./transparent.ts";
 // Embedded so the compiled binary is self-contained.
 import viewerHtml from "../public/index.html" with { type: "text" };
 // Brand assets, embedded as files so they ship inside the compiled binary.
@@ -137,4 +139,27 @@ console.log(`luwak listening on http://${server.hostname}:${server.port}`);
 console.log(`  viewer:  http://${server.hostname}:${server.port}/app`);
 for (const p of config.providers) {
   console.log(`  ${p.id.padEnd(10)} ${p.prefix}  ->  ${p.upstream}`);
+}
+
+// --- Transparent MITM proxy (optional) ---
+if (config.transparent?.enabled) {
+  try {
+    const { hostname: thost, port: tport } = parseListen(config.transparent.listen);
+    const ca = new CertificateAuthority(config.transparent.ca_cert, config.transparent.ca_key);
+    console.log(`  CA cert:  ${config.transparent.ca_cert}`);
+    console.log(`  Install the CA cert in your system trust store, then set:`);
+    console.log(`    HTTPS_PROXY=http://${thost}:${tport}`);
+    startTransparentProxy({
+      hostname: thost,
+      port: tport,
+      providers: config.providers,
+      store,
+      tap,
+      ca,
+    });
+  } catch (err) {
+    console.error(`luwak: transparent proxy failed to start: ${String(err)}`);
+    console.error(`luwak: reverse proxy and viewer are still running.`);
+    console.error(`luwak: fix the error above and restart to enable transparent mode.`);
+  }
 }

@@ -44,6 +44,17 @@ providers:
   #   prefix: /groq
   #   upstream: https://api.groq.com/openai
   #   adapter: openai
+
+# Transparent MITM proxy (optional).
+# When enabled, set HTTPS_PROXY=http://127.0.0.1:8081 in your client's
+# environment instead of changing base URLs. Requires OpenSSL for CA
+# certificate generation. Install luwak-ca.crt in your trust store, then
+# use the "Install CA Certificate" option in the tray menu.
+# transparent:
+#   enabled: true
+#   listen: 127.0.0.1:8081
+#   ca_cert: ./luwak-ca.crt
+#   ca_key: ./luwak-ca.key
 "#;
 
 /// Resolve the config file path, creating a default if none exists.
@@ -175,12 +186,94 @@ fn build_sidecar_command(app: &AppHandle, config_path: &PathBuf) -> Result<tauri
         .sidecar("luwak")
         .map_err(|e| format!("Failed to find sidecar binary: {}", e))?;
 
-    Ok(cmd
-        .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
-        .current_dir(&cwd))
+    // On Windows, GUI apps may have a truncated PATH. Merge the system PATH
+    // from the registry so the sidecar can find tools like openssl.
+    #[cfg(target_os = "windows")]
+    {
+        let system_path = get_full_windows_path();
+        Ok(cmd
+            .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
+            .env("PATH", system_path)
+            .current_dir(&cwd))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(cmd
+            .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
+            .current_dir(&cwd))
+    }
+}
+
+/// Get the full PATH from the Windows registry (Machine + User), merging with
+/// the current process PATH. This ensures the sidecar can find openssl etc.
+#[cfg(target_os = "windows")]
+fn get_full_windows_path() -> String {
+    use std::process::Command;
+
+    let mut paths: Vec<String> = Vec::new();
+
+    // Current process PATH
+    if let Ok(p) = std::env::var("PATH") {
+        for part in p.split(';') {
+            if !part.is_empty() {
+                paths.push(part.to_string());
+            }
+        }
+    }
+
+    // System (Machine) PATH from registry
+    if let Ok(output) = Command::new("reg")
+        .args(["query", "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", "/v", "PATH"])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if let Some(idx) = line.find("PATH") {
+                    if let Some(rest) = line[idx..].strip_prefix("PATH") {
+                        let rest = rest.trim_start_matches([' ', '\t']);
+                        if let Some(rest) = rest.strip_prefix("REG_SZ") {
+                            for part in rest.trim().split(';') {
+                                if !part.is_empty() && !paths.contains(&part.to_string()) {
+                                    paths.push(part.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // User PATH from registry
+    if let Ok(output) = Command::new("reg")
+        .args(["query", "HKCU\\Environment", "/v", "PATH"])
+        .output()
+    {
+        if output.status.success() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                if let Some(idx) = line.find("PATH") {
+                    if let Some(rest) = line[idx..].strip_prefix("PATH") {
+                        let rest = rest.trim_start_matches([' ', '\t']);
+                        if let Some(rest) = rest.strip_prefix("REG_SZ") {
+                            for part in rest.trim().split(';') {
+                                if !part.is_empty() && !paths.contains(&part.to_string()) {
+                                    paths.push(part.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    paths.join(";")
 }
 
 /// Monitor the sidecar: capture stderr, detect crashes, check health.
+/// All stdout/stderr is written to luwak.log next to the config file.
 fn spawn_monitor(
     app: AppHandle,
     rx: tauri::async_runtime::Receiver<CommandEvent>,
@@ -188,6 +281,13 @@ fn spawn_monitor(
     config_path: PathBuf,
     stop_flag: Arc<AtomicBool>,
 ) {
+    // Truncate the log at startup so it doesn't grow forever.
+    let log_file = log_path(&app);
+    let _ = std::fs::write(&log_file, "");
+    log_line(&app, &format!("--- luwak desktop starting ---"));
+    log_line(&app, &format!("config: {}", config_path.display()));
+    log_line(&app, &format!("log file: {}", log_file.display()));
+
     std::thread::spawn(move || {
         let mut rx = rx;
         let mut last_error = String::new();
@@ -204,7 +304,7 @@ fn spawn_monitor(
                     let text = String::from_utf8_lossy(&line).to_string();
                     let text = text.trim();
                     if !text.is_empty() {
-                        eprintln!("luwak sidecar: {}", text);
+                        log_line(&app, &format!("stderr: {}", text));
                         last_error = text.to_string();
                     }
                 }
@@ -212,7 +312,7 @@ fn spawn_monitor(
                     let text = String::from_utf8_lossy(&line).to_string();
                     let text = text.trim();
                     if !text.is_empty() {
-                        println!("luwak sidecar: {}", text);
+                        log_line(&app, &format!("stdout: {}", text));
                     }
                 }
                 Ok(CommandEvent::Terminated(payload)) => {
@@ -221,12 +321,13 @@ fn spawn_monitor(
                     } else {
                         last_error
                     };
+                    log_line(&app, &format!("TERMINATED: {}", msg));
                     show_error(&app, &msg);
                     return;
                 }
                 Ok(CommandEvent::Error(err)) => {
                     last_error = err.clone();
-                    eprintln!("luwak sidecar error: {}", err);
+                    log_line(&app, &format!("error: {}", err));
                 }
                 Ok(_) => {}
                 Err(_) => {
@@ -249,29 +350,51 @@ fn spawn_monitor(
             } else {
                 last_error
             };
+            log_line(&app, &format!("HEALTH CHECK FAILED: {}", msg));
             show_error(&app, &msg);
             return;
         }
 
+        log_line(&app, &format!("proxy healthy on port {}", port));
+
         if let Err(e) = navigate_to_viewer(&app, port) {
-            eprintln!("luwak: failed to navigate to viewer: {}", e);
+            log_line(&app, &format!("failed to navigate to viewer: {}", e));
             show_error(&app, &format!("Failed to load viewer: {}", e));
             return;
         }
 
+        log_line(&app, "viewer loaded, entering health monitor loop");
+
         loop {
             std::thread::sleep(Duration::from_secs(5));
             if stop_flag.load(Ordering::SeqCst) {
+                log_line(&app, "monitor stop requested, exiting");
                 return;
             }
             match rx.try_recv() {
+                Ok(CommandEvent::Stderr(line)) => {
+                    let text = String::from_utf8_lossy(&line).to_string();
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        log_line(&app, &format!("stderr: {}", text));
+                    }
+                }
+                Ok(CommandEvent::Stdout(line)) => {
+                    let text = String::from_utf8_lossy(&line).to_string();
+                    let text = text.trim();
+                    if !text.is_empty() {
+                        log_line(&app, &format!("stdout: {}", text));
+                    }
+                }
                 Ok(CommandEvent::Terminated(_)) => {
+                    log_line(&app, "proxy terminated unexpectedly");
                     show_error(&app, "The proxy process has stopped unexpectedly.");
                     return;
                 }
                 Ok(_) => {}
                 Err(_) => {
                     if !is_healthy(port) {
+                        log_line(&app, "proxy health check failed (port not responding)");
                         show_error(&app, "The proxy process has stopped unexpectedly.");
                         return;
                     }
@@ -317,6 +440,34 @@ pub fn data_folder(app: &AppHandle) -> PathBuf {
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// Log file lives next to the config file (same directory as the exe in
+/// portable mode, or in app_data_dir for installed mode).
+pub fn log_path(app: &AppHandle) -> PathBuf {
+    let config_path = get_config_path(app);
+    config_path
+        .parent()
+        .map(|d| d.join("luwak.log"))
+        .unwrap_or_else(|| PathBuf::from("luwak.log"))
+}
+
+/// Append a line to the log file with a timestamp.
+fn log_line(app: &AppHandle, line: &str) {
+    let path = log_path(app);
+    let timestamp = {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        format!("{}", now)
+    };
+    let entry = format!("[{}] {}\n", timestamp, line);
+    let _ = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()));
 }
 
 pub fn start_and_connect(app: &AppHandle) -> Result<(), String> {

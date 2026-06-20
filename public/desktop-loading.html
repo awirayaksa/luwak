@@ -93,6 +93,7 @@
     <div class="btn-row">
       <button class="retry" onclick="window.__luwakRetry()">Retry</button>
       <button class="btn-secondary" onclick="window.__luwakOpenConfig()">Open Config</button>
+      <button class="btn-secondary" onclick="window.__luwakViewLogs()">View Logs</button>
     </div>
     <div class="hint" id="error-hint"></div>
   </div>
@@ -123,6 +124,12 @@
       tauriInvoke('open_config_file').catch(function() {
         var hint = document.getElementById('error-hint');
         hint.textContent = 'Could not open config editor. See config path above.';
+      });
+    };
+    window.__luwakViewLogs = function() {
+      tauriInvoke('open_log_file').catch(function() {
+        var hint = document.getElementById('error-hint');
+        hint.textContent = 'Could not open log file. Check luwak.log next to the executable.';
       });
     };
   </script>

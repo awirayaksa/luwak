@@ -39,6 +39,8 @@ Luwak is a fast, lightweight LLM proxy built with Bun + TypeScript. It captures 
 - `src/live.ts` — SSE broadcast bus for live tail
 - `src/redact.ts` — secret redaction for export
 - `src/sse.ts` — SSE line parser and buffer
+- `src/ca.ts` — CA certificate management (generate, sign per-host certs via OpenSSL)
+- `src/transparent.ts` — MITM CONNECT proxy: TLS interception, HTTP parsing, blind tunneling
 
 ### Viewer (`public/`)
 - `public/index.html` — single-file SPA viewer (480 lines, no framework)
