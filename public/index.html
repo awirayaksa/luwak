@@ -140,7 +140,8 @@
   .role.tool { background: var(--tool-soft); color: var(--tool); }
   .src { color: var(--muted); font-size: 11px; }
   .marker { font-size: 10px; color: var(--danger); border: 1px solid var(--danger-soft); border-radius: 8px; padding: 1px 6px; }
-  .part { padding: 8px 10px; border-top: 1px solid var(--border); }
+  .part { padding: 8px 10px; border-top: 1px solid var(--border); white-space: pre-wrap; word-break: break-word; }
+  .part.md { white-space: normal; }
   .part .pt { color: var(--muted); font-size: 10px; text-transform: uppercase; margin-bottom: 3px; }
   .part.thinking { background: var(--thinking-bg); } .part.thinking .pt { color: var(--thinking); }
   .part.tool_call { background: var(--tint-call); } .part.tool_call .pt { color: var(--tool); }
@@ -349,10 +350,10 @@ function renderPart(p, useLens, hlText) {
     if (useLens && mdActive()) { inner = renderMarkdown(p.text || ""); md = " md"; }
     else inner = h ? hl(p.text || "", h) : esc(p.text || "");
   }
-  else if (p.type === "tool_call") inner = esc(p.name) + "(" + esc(JSON.stringify(p.args)) + ")";
-  else if (p.type === "tool_result") inner = esc(JSON.stringify(p.content));
+  else if (p.type === "tool_call") inner = esc(p.name) + "(" + esc(JSON.stringify(p.args)).replace(/\\n/g, "\n") + ")";
+  else if (p.type === "tool_result") inner = esc(JSON.stringify(p.content)).replace(/\\n/g, "\n");
   else if (p.type === "image") inner = esc("[image " + p.ref + "]");
-  else inner = esc(JSON.stringify(p.raw ?? p));
+  else inner = esc(JSON.stringify(p.raw ?? p)).replace(/\\n/g, "\n");
   return `<div class="part ${p.type}${md}"><div class="pt">${p.type}</div>${inner}</div>`;
 }
 
