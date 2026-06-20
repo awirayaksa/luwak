@@ -8,3 +8,13 @@ luwak.yaml
 *.log
 
 .smoke/*.db*
+
+# Tauri desktop app
+src-tauri/target/
+src-tauri/binaries/
+src-tauri/icon-source.png
+src-tauri/gen/
+bun.lock
+
+# Playwright
+.playwright-mcp/

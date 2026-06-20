@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Luwak",
+  "version": "0.1.0",
+  "identifier": "net.awsystem.luwak",
+  "build": {
+    "frontendDist": "../public",
+    "beforeBuildCommand": "bun run build:sidecar",
+    "beforeDevCommand": ""
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Luwak",
+        "label": "main",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "visible": false,
+        "url": "desktop-loading.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/luwak"
+    ],
+    "resources": [],
+    "windows": {
+      "wix": {
+        "language": "en-US"
+      }
+    }
+  }
+}

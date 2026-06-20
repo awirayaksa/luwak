@@ -9,6 +9,11 @@
     "dev": "bun --watch src/index.ts",
     "reparse": "bun run src/index.ts reparse",
     "export": "bun run src/index.ts export",
-    "build": "bun build --compile src/index.ts --outfile luwak"
+    "build": "bun build --compile src/index.ts --outfile luwak",
+    "build:sidecar": "node scripts/build-sidecar.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "cargo tauri dev",
+    "tauri:build": "cargo tauri build",
+    "build:portable": "cargo tauri build && node scripts/build-portable.mjs"
   }
 }
