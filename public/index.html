@@ -130,6 +130,23 @@
   h3 { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 14px 0 6px; }
   pre { background: var(--raised); border: 1px solid var(--border); border-radius: 7px; padding: 10px;
         white-space: pre-wrap; word-break: break-word; overflow-x: auto; margin: 0; }
+  /* Collapsible JSON tree for request/response bodies. */
+  .jtree { background: var(--raised); border: 1px solid var(--border); border-radius: 7px; padding: 10px; overflow-x: auto; font-size: 12px; line-height: 1.6; }
+  .jline { white-space: pre-wrap; word-break: break-word; }
+  .jtoggle { cursor: pointer; border-radius: 3px; }
+  .jtoggle:hover { background: var(--hover); }
+  .jarrow { display: inline-block; width: 12px; min-width: 12px; color: var(--muted); user-select: none; }
+  .jnode:not(.collapsed) > .jtoggle .jarrow::before { content: "\25BC"; }
+  .jnode.collapsed > .jtoggle .jarrow::before { content: "\25B6"; }
+  .jnode > .jbody { padding-left: 18px; }
+  .jnode.collapsed > .jbody { display: none; }
+  .jnode:not(.collapsed) > .jtoggle .jpreview { display: none; }
+  .jnode:not(.collapsed) > .jtoggle .jclosei { display: none; }
+  .jkey { color: var(--user); } .jidx { color: var(--muted); }
+  .jcolon { color: var(--muted); }
+  .jstr { color: var(--ok); } .jnum { color: var(--accent); }
+  .jbool { color: var(--thinking); } .jnull { color: var(--muted); }
+  .jbracket { color: var(--muted); } .jpreview { color: var(--muted); } .jcomma { color: var(--muted); }
   .kv { color: var(--muted); } .kv b { color: var(--text); font-weight: normal; }
   .msg { border: 1px solid var(--border); border-radius: 9px; margin-bottom: 8px; overflow: hidden; }
   .msg .hd { padding: 4px 10px; background: var(--panel); display: flex; gap: 8px; align-items: center; }
@@ -460,6 +477,58 @@ async function select(id) {
 
 function fmt(body) { if (!pretty) return body; try { return JSON.stringify(JSON.parse(body), null, 2); } catch { return body; } }
 
+function renderJsonTree(value, key, isLast, h, depth, isIndex) {
+  depth = depth || 0;
+  let keyPrefix = "";
+  if (key !== undefined) {
+    keyPrefix = isIndex
+      ? `<span class="jidx">${esc(String(key))}</span><span class="jcolon">: </span>`
+      : `<span class="jkey">${esc(JSON.stringify(String(key)))}</span><span class="jcolon">: </span>`;
+  }
+  const comma = isLast ? "" : ",";
+
+  if (value === null)
+    return `<div class="jline">${keyPrefix}<span class="jnull">null</span>${comma}</div>`;
+  if (typeof value !== "object") {
+    let val;
+    if (typeof value === "string") {
+      const s = JSON.stringify(value);
+      val = `<span class="jstr">${h ? hl(s, h) : esc(s)}</span>`;
+    } else {
+      const cls = typeof value === "number" ? "jnum" : "jbool";
+      val = `<span class="${cls}">${esc(String(value))}</span>`;
+    }
+    return `<div class="jline">${keyPrefix}${val}${comma}</div>`;
+  }
+
+  const isArray = Array.isArray(value);
+  const open = isArray ? "[" : "{";
+  const close = isArray ? "]" : "}";
+  const len = isArray ? value.length : Object.keys(value).length;
+
+  if (!len)
+    return `<div class="jline">${keyPrefix}${open}${close}${comma}</div>`;
+
+  let children;
+  if (isArray) {
+    children = value.map((v, i) => renderJsonTree(v, String(i), i === len - 1, h, depth + 1, true)).join("");
+  } else {
+    const ents = Object.entries(value);
+    children = ents.map(([k, v], i) => renderJsonTree(v, k, i === ents.length - 1, h, depth + 1, false)).join("");
+  }
+
+  const rootCls = depth === 0 ? " jroot" : "";
+  const collapsed = depth >= 1 ? " collapsed" : "";
+  return `<div class="jnode${rootCls}${collapsed}">
+    <div class="jline jtoggle" onclick="jtoggle(this)"><span class="jarrow"></span>${keyPrefix}<span class="jbracket">${open}</span> <span class="jpreview">${len}</span><span class="jbracket jclosei">${close}</span>${comma}</div>
+    <div class="jbody">${children}<div class="jline"><span class="jbracket">${close}</span>${comma}</div></div>
+  </div>`;
+}
+
+function jtoggle(el) { el.parentNode.classList.toggle("collapsed"); }
+function jsonExpandAll() { document.querySelectorAll("#feed-main .jnode").forEach(n => n.classList.remove("collapsed")); }
+function jsonCollapseAll() { document.querySelectorAll("#feed-main .jnode:not(.jroot)").forEach(n => n.classList.add("collapsed")); }
+
 function renderDetail() {
   const e = detail; if (!e) return;
   $("detail").innerHTML = `
@@ -488,13 +557,24 @@ function renderFeedMain() {
   } else {
     const headers = tab === "request" ? e.req_headers : e.resp_headers;
     const body = tab === "request" ? e.req_body : e.resp_body;
+    let bodyHtml;
+    if (pretty) {
+      try {
+        const parsed = JSON.parse(body);
+        bodyHtml = `<div style="margin-bottom:6px"><button onclick="jsonExpandAll()">expand all</button> <button onclick="jsonCollapseAll()">collapse all</button></div><div class="jtree">${renderJsonTree(parsed, undefined, true, feedHl)}</div>`;
+      } catch {
+        bodyHtml = `<pre>${hl(body, feedHl)}</pre>`;
+      }
+    } else {
+      bodyHtml = `<pre>${hl(body, feedHl)}</pre>`;
+    }
     main = `
       <div class="kv"><b>${e.method}</b> ${esc(e.upstream_url)}<br/>
         status <b>${e.status}</b> · ${e.ts_end - e.ts_start}ms
         ${e.is_streaming ? "· " + (e.chunk_timings?.length || 0) + " chunks" : ""}
         ${e.incomplete ? '· <span style="color:#ff7b72">incomplete</span>' : ""}</div>
       <h3>Headers</h3><pre>${hl(Object.entries(headers).map(([k,v]) => k + ": " + v).join("\n"), feedHl)}</pre>
-      <h3>Body</h3><pre>${hl(fmt(body), feedHl)}</pre>`;
+      <h3>Body</h3>${bodyHtml}`;
   }
   $("feed-main").innerHTML = main;
 }
