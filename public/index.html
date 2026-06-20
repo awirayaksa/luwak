@@ -187,9 +187,9 @@
 <body>
   <header>
     <img class="logo" src="/assets/luwak-mark.svg" alt="" />
-    <b>luwak</b>
-    <button id="m-threads" onclick="setMode('threads')">Threads</button>
+    <b>Luwak</b>
     <button id="m-feed" onclick="setMode('feed')">Feed</button>
+    <button id="m-threads" onclick="setMode('threads')">Threads</button>
     <input id="q" type="search" placeholder="search messages (FTS)…" />
     <button onclick="doSearch()">search</button>
     <button onclick="refresh()">↻</button>
@@ -229,10 +229,10 @@ function applyTheme(t) {
 function setTheme(t) { localStorage.setItem("luwak-theme", t); applyTheme(t); }
 applyTheme(localStorage.getItem("luwak-theme") || "espresso");
 
-let mode = "threads";
+let mode = "feed";
 let threads = [], rows = [], hits = [];
 let activeThread = null, thread = null;
-let activeId = null, detail = null, messages = [], tab = "parsed", pretty = true;
+let activeId = null, detail = null, messages = [], tab = "parsed", pretty = true, feedHl = "";
 
 // Composable lenses for the conversation view; applied as a pipeline.
 let lens = { scope: "both", roles: { system: true, user: true, assistant: true, tool: true }, highlight: "", filterOut: "", raw: false, markdown: false };
@@ -332,20 +332,22 @@ async function showThread(id) {
   renderThread();
 }
 
-function hl(text) {
+function hl(text, h) {
   const e = esc(text);
-  if (!lens.highlight) return e;
-  const re = new RegExp(lens.highlight.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+  h = h ?? lens.highlight;
+  if (!h) return e;
+  const re = new RegExp(h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
   return e.replace(re, m => "<mark>" + m + "</mark>");
 }
 
-function renderPart(p, useLens) {
+function renderPart(p, useLens, hlText) {
   if (useLens && lens.raw) return `<div class="part ${p.type}"><div class="pt">${p.type}</div>${esc(JSON.stringify(p))}</div>`;
   let inner, md = "";
+  const h = hlText !== undefined ? hlText : (useLens ? lens.highlight : "");
   if (p.type === "text" || p.type === "thinking") {
     // Markdown wins over highlight: rendered HTML and <mark> injection don't mix.
     if (useLens && mdActive()) { inner = renderMarkdown(p.text || ""); md = " md"; }
-    else inner = useLens ? hl(p.text || "") : esc(p.text || "");
+    else inner = h ? hl(p.text || "", h) : esc(p.text || "");
   }
   else if (p.type === "tool_call") inner = esc(p.name) + "(" + esc(JSON.stringify(p.args)) + ")";
   else if (p.type === "tool_result") inner = esc(JSON.stringify(p.content));
@@ -459,11 +461,28 @@ function fmt(body) { if (!pretty) return body; try { return JSON.stringify(JSON.
 
 function renderDetail() {
   const e = detail; if (!e) return;
+  $("detail").innerHTML = `
+    <div class="tabs">
+      <button class="${tab==='parsed'?'active':''}" onclick="tab='parsed';renderDetail()">Parsed</button>
+      <button class="${tab==='request'?'active':''}" onclick="tab='request';renderDetail()">Request</button>
+      <button class="${tab==='response'?'active':''}" onclick="tab='response';renderDetail()">Response</button>
+      <span class="spacer"></span>
+      <button onclick="window.open('/api/exchanges/' + detail.id + '/export')">export ⤓</button>
+      ${tab!=='parsed' ? `<button class="${pretty?'active':''}" onclick="pretty=!pretty;renderDetail()">${pretty?'pretty':'raw'}</button>` : ""}
+      <input id="fhl" type="search" placeholder="highlight…" value="${esc(feedHl)}"
+             style="flex:0 1 140px" oninput="feedHl=this.value;renderFeedMain()" />
+    </div>
+    <div id="feed-main"></div>`;
+  renderFeedMain();
+}
+
+function renderFeedMain() {
+  const e = detail; if (!e) return;
   let main;
   if (tab === "parsed") {
     main = messages.length ? messages.map(m => `
       <div class="msg"><div class="hd"><span class="role ${m.role}">${m.role}</span><span class="src">${m.source} · #${m.seq}</span></div>
-        ${m.parts.map(renderPart).join("")}</div>`).join("")
+        ${m.parts.map(p => renderPart(p, false, feedHl)).join("")}</div>`).join("")
       : '<div class="empty">No normalized messages.</div>';
   } else {
     const headers = tab === "request" ? e.req_headers : e.resp_headers;
@@ -473,18 +492,10 @@ function renderDetail() {
         status <b>${e.status}</b> · ${e.ts_end - e.ts_start}ms
         ${e.is_streaming ? "· " + (e.chunk_timings?.length || 0) + " chunks" : ""}
         ${e.incomplete ? '· <span style="color:#ff7b72">incomplete</span>' : ""}</div>
-      <h3>Headers</h3><pre>${esc(Object.entries(headers).map(([k,v]) => k + ": " + v).join("\n"))}</pre>
-      <h3>Body</h3><pre>${esc(fmt(body))}</pre>`;
+      <h3>Headers</h3><pre>${hl(Object.entries(headers).map(([k,v]) => k + ": " + v).join("\n"), feedHl)}</pre>
+      <h3>Body</h3><pre>${hl(fmt(body), feedHl)}</pre>`;
   }
-  $("detail").innerHTML = `
-    <div class="tabs">
-      <button class="${tab==='parsed'?'active':''}" onclick="tab='parsed';renderDetail()">Parsed</button>
-      <button class="${tab==='request'?'active':''}" onclick="tab='request';renderDetail()">Request</button>
-      <button class="${tab==='response'?'active':''}" onclick="tab='response';renderDetail()">Response</button>
-      <span class="spacer"></span>
-      <button onclick="window.open('/api/exchanges/' + detail.id + '/export')">export ⤓</button>
-      ${tab!=='parsed' ? `<button class="${pretty?'active':''}" onclick="pretty=!pretty;renderDetail()">${pretty?'pretty':'raw'}</button>` : ""}
-    </div>${main}`;
+  $("feed-main").innerHTML = main;
 }
 
 // --- Live tail (SSE) ---
