@@ -292,6 +292,18 @@ export class Store {
     this.db.exec(`DELETE FROM parts; DELETE FROM messages_fts; DELETE FROM messages; DELETE FROM thread_links;`);
   }
 
+  /** Delete all captures — both sacred raw and derived/normalized tables. */
+  clearAll(): void {
+    this.db.exec(`
+      DELETE FROM parts;
+      DELETE FROM messages_fts;
+      DELETE FROM messages;
+      DELETE FROM thread_links;
+      DELETE FROM exchanges_raw;
+      DELETE FROM sqlite_sequence WHERE name IN ('exchanges_raw', 'messages', 'parts');
+    `);
+  }
+
   getMessages(exchangeId: number): StoredMessage[] {
     const rows = this.db
       .query(

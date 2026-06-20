@@ -15,5 +15,8 @@
     "tauri:dev": "cargo tauri dev",
     "tauri:build": "cargo tauri build",
     "build:portable": "cargo tauri build && node scripts/build-portable.mjs"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.14"
   }
 }

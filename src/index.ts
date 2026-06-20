@@ -93,6 +93,10 @@ const server = Bun.serve({
       return new Response(Bun.file(assets[asset[1]]));
     }
     if (path === "/api/exchanges") {
+      if (req.method === "DELETE") {
+        store.clearAll();
+        return json({ cleared: true });
+      }
       return json(store.list());
     }
     const m = path.match(/^\/api\/exchanges\/(\d+)$/);

@@ -27,6 +27,34 @@ fn restart_proxy(app: tauri::AppHandle) -> Result<(), String> {
     sidecar::restart(&app)
 }
 
+#[tauri::command]
+fn clear_captures(app: tauri::AppHandle) -> Result<(), String> {
+    let port = sidecar::get_port(&app);
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    let mut stream = TcpStream::connect_timeout(
+        &format!("127.0.0.1:{}", port).parse().map_err(|e: std::net::AddrParseError| e.to_string())?,
+        std::time::Duration::from_secs(5),
+    )
+    .map_err(|e| format!("Cannot connect to proxy: {}", e))?;
+    let req = format!(
+        "DELETE /api/exchanges HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n\r\n",
+        port
+    );
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| format!("Request failed: {}", e))?;
+    let mut buf = Vec::with_capacity(256);
+    stream
+        .read_to_end(&mut buf)
+        .map_err(|e| format!("Read failed: {}", e))?;
+    let resp = String::from_utf8_lossy(&buf);
+    if !resp.starts_with("HTTP/1.1 200") && !resp.starts_with("HTTP/1.0 200") {
+        return Err(format!("Proxy error: {}", resp.lines().next().unwrap_or("?")));
+    }
+    Ok(())
+}
+
 fn open_path_in_os(path: &std::path::Path, is_folder: bool) {
     let path_str = path.to_string_lossy().to_string();
     #[cfg(target_os = "windows")]
@@ -144,6 +172,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_proxy_info,
             restart_proxy,
+            clear_captures,
             open_data_folder,
             open_config_file,
             open_log_file,

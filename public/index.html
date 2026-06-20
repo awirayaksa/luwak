@@ -68,6 +68,21 @@
     --tint-call: #fff8e8; --tint-result: #eafaef;
     --mark-bg: #fae17d; --shadow: 0 10px 30px #1f23281f;
   }
+  :root[data-theme="matrix"] {
+    color-scheme: dark;
+    --bg: #000000; --panel: #030a03; --raised: #061206; --border: #1a3a1a;
+    --text: #33ff66; --muted: #2a8a44;
+    --accent: #00ff41; --accent-strong: #7dffaf; --accent-soft: #00ff4122;
+    --ok: #00ff41;
+    --danger: #ff5c5c; --danger-soft: #ff5c5c33;
+    --hover: #06120688; --active-bg: #00ff411f;
+    --user: #7dffaf; --user-soft: #7dffaf33;
+    --assistant: #00ff41; --assistant-soft: #00ff412e;
+    --tool: #33cc55; --tool-soft: #33cc5533;
+    --thinking: #99ffcc; --thinking-bg: #07140e;
+    --tint-call: #071407; --tint-result: #07140b;
+    --mark-bg: #00ff4177; --shadow: 0 10px 34px #000a;
+  }
   * { box-sizing: border-box; }
   body { margin: 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
          background: var(--bg); color: var(--text); height: 100vh; display: grid;
@@ -158,6 +173,15 @@
   #live .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-strong); animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: .3; } }
   #live pre { background: transparent; border: 0; padding: 0; max-height: 260px; }
+  #modal-bg { position: fixed; inset: 0; background: #0008; display: none; align-items: center; justify-content: center; z-index: 100; }
+  #modal-bg.on { display: flex; }
+  #modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+           padding: 20px 24px; max-width: 400px; text-align: center; }
+  #modal .modal-msg { color: var(--text); margin: 0 0 18px; line-height: 1.5; }
+  #modal .modal-btns { display: flex; gap: 10px; justify-content: center; }
+  #modal button { min-width: 90px; }
+  #modal .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+  #modal .btn-danger:hover { border-color: var(--danger); filter: brightness(1.1); }
 </style>
 </head>
 <body>
@@ -169,21 +193,32 @@
     <input id="q" type="search" placeholder="search messages (FTS)…" />
     <button onclick="doSearch()">search</button>
     <button onclick="refresh()">↻</button>
+    <button onclick="clearCaptures()" title="Delete all captured traffic" style="border-color:var(--danger);color:var(--danger)">clear</button>
     <select id="theme-select" onchange="setTheme(this.value)" title="Theme">
       <option value="espresso">☕ Espresso</option>
       <option value="latte">🥛 Latte</option>
       <option value="github">🌙 GitHub Dark</option>
       <option value="snow">☀ Snow</option>
+      <option value="matrix">🟢 Matrix</option>
     </select>
   </header>
   <div id="list"></div>
   <div id="detail"><div class="welcome"><img src="/assets/luwak-logo.png" alt="luwak — llm proxy · log viewer" /><div>Select a thread.</div></div></div>
   <div id="live"></div>
+  <div id="modal-bg">
+    <div id="modal">
+      <p class="modal-msg" id="modal-msg"></p>
+      <div class="modal-btns">
+        <button onclick="closeModal()">Cancel</button>
+        <button class="btn-danger" id="modal-confirm">Confirm</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 // --- Theme — espresso (warm dark, default) · latte (warm light) ·
-//     github (cold dark) · snow (white light). Persisted to localStorage. ---
-const THEMES = ["espresso", "latte", "github", "snow"];
+//     github (cold dark) · snow (white light) · matrix (green CRT). Persisted to localStorage. ---
+const THEMES = ["espresso", "latte", "github", "snow", "matrix"];
 function applyTheme(t) {
   if (!THEMES.includes(t)) t = "espresso";
   if (t === "espresso") delete document.documentElement.dataset.theme; // espresso = :root default
@@ -213,6 +248,23 @@ const when = (ms) => new Date(ms).toLocaleString();
 const esc = (s) => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;" }[c]));
 
 function setMode(m) { mode = m; activeThread = null; activeId = null; refresh(); }
+
+function openModal(msg, onConfirm) {
+  $("modal-msg").textContent = msg;
+  $("modal-bg").classList.add("on");
+  const btn = $("modal-confirm");
+  const handler = () => { btn.removeEventListener("click", handler); closeModal(); onConfirm(); };
+  btn.addEventListener("click", handler);
+}
+function closeModal() { $("modal-bg").classList.remove("on"); }
+
+async function clearCaptures() {
+  openModal("Delete all captured proxy traffic? This cannot be undone.", async () => {
+    await fetch("/api/exchanges", { method: "DELETE" });
+    activeThread = null; activeId = null; thread = null; detail = null; messages = [];
+    refresh();
+  });
+}
 
 async function refresh() {
   $("m-threads").classList.toggle("active", mode === "threads");

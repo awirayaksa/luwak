@@ -57,18 +57,50 @@ providers:
 #   ca_key: ./luwak-ca.key
 "#;
 
+/// In dev mode, find the workspace root (the directory containing src/ and
+/// src-tauri/). When running `cargo tauri dev`, the cwd is typically
+/// src-tauri/, so we go up one level.
+#[cfg(debug_assertions)]
+fn dev_workspace_root() -> PathBuf {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    if cwd.file_name().map(|n| n == "src-tauri").unwrap_or(false) {
+        if let Some(parent) = cwd.parent() {
+            return parent.to_path_buf();
+        }
+    }
+    if cwd.join("src-tauri").is_dir() {
+        return cwd;
+    }
+    if let Some(parent) = cwd.parent() {
+        if parent.join("src-tauri").is_dir() {
+            return parent.to_path_buf();
+        }
+    }
+    cwd
+}
+
 /// Resolve the config file path, creating a default if none exists.
 ///
 /// Search order:
 /// 1. LUWAK_CONFIG env var (if the file exists)
-/// 2. Next to the main exe (portable mode)
-/// 3. App data directory (installed mode)
-/// 4. Create a default config next to the exe (portable) or in app_data_dir
+/// 2. [dev only] Workspace root (parent of src-tauri/)
+/// 3. Next to the main exe (portable mode)
+/// 4. App data directory (installed mode)
+/// 5. Create a default config next to the exe (portable) or in app_data_dir
 fn resolve_config_path(app: &AppHandle) -> PathBuf {
     if let Ok(path) = std::env::var("LUWAK_CONFIG") {
         let p = PathBuf::from(&path);
         if p.exists() {
             return p;
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let root = dev_workspace_root();
+        let config = root.join("luwak.yaml");
+        if config.exists() {
+            return config;
         }
     }
 
@@ -142,6 +174,7 @@ pub fn is_healthy(port: u16) -> bool {
     std::net::TcpStream::connect(format!("127.0.0.1:{}", port)).is_ok()
 }
 
+#[allow(dead_code)]
 fn wait_for_health(port: u16, timeout_secs: u64) -> bool {
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     while Instant::now() < deadline {
@@ -175,6 +208,7 @@ fn show_error(app: &AppHandle, msg: &str) {
 }
 
 /// Build the sidecar command with the correct env var and working directory.
+#[allow(dead_code)]
 fn build_sidecar_command(app: &AppHandle, config_path: &PathBuf) -> Result<tauri_plugin_shell::process::Command, String> {
     let cwd = config_path
         .parent()
@@ -207,6 +241,7 @@ fn build_sidecar_command(app: &AppHandle, config_path: &PathBuf) -> Result<tauri
 /// Get the full PATH from the Windows registry (Machine + User), merging with
 /// the current process PATH. This ensures the sidecar can find openssl etc.
 #[cfg(target_os = "windows")]
+#[allow(dead_code)]
 fn get_full_windows_path() -> String {
     use std::process::Command;
 
@@ -270,6 +305,19 @@ fn get_full_windows_path() -> String {
     }
 
     paths.join(";")
+}
+
+/// Build a command to run the proxy via `bun --watch` in dev mode.
+/// The workspace root (parent of src-tauri/) is used as the working directory
+/// so `src/index.ts` and `luwak.yaml` resolve correctly.
+#[cfg(debug_assertions)]
+fn build_dev_command(app: &AppHandle, config_path: &PathBuf) -> tauri_plugin_shell::process::Command {
+    let workspace = dev_workspace_root();
+    app.shell()
+        .command("bun")
+        .args(["--watch", "src/index.ts"])
+        .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
+        .current_dir(&workspace)
 }
 
 /// Monitor the sidecar: capture stderr, detect crashes, check health.
@@ -468,38 +516,44 @@ fn log_line(app: &AppHandle, line: &str) {
         .append(true)
         .open(&path)
         .and_then(|mut f| std::io::Write::write_all(&mut f, entry.as_bytes()));
+
+    if cfg!(debug_assertions) {
+        eprintln!("[luwak] {}", line);
+    }
 }
 
 pub fn start_and_connect(app: &AppHandle) -> Result<(), String> {
     let config_path = resolve_config_path(app);
     let port = read_port_from_config(&config_path);
 
-    if cfg!(debug_assertions) {
+    #[cfg(debug_assertions)]
+    {
+        let dev_cmd = build_dev_command(app, &config_path);
+        let (rx, child) = dev_cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn dev proxy (is bun on PATH?): {}", e))?;
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+
         app.manage(Mutex::new(SidecarState {
-            child: None,
+            child: Some(child),
             port,
             config_path: config_path.clone(),
-            monitor_stop: None,
+            monitor_stop: Some(stop_flag.clone()),
         }));
 
-        let app_handle = app.clone();
-        std::thread::spawn(move || {
-            if wait_for_health(port, 60) {
-                if let Err(e) = navigate_to_viewer(&app_handle, port) {
-                    eprintln!("luwak: failed to navigate to viewer: {}", e);
-                }
-            } else {
-                show_error(
-                    &app_handle,
-                    &format!(
-                        "Could not connect to proxy on port {}.\nStart it with: bun run dev",
-                        port
-                    ),
-                );
-            }
-        });
-        Ok(())
-    } else {
+        spawn_monitor(
+            app.clone(),
+            rx,
+            port,
+            config_path,
+            stop_flag,
+        );
+        return Ok(());
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
         let sidecar_cmd = build_sidecar_command(app, &config_path)?;
         let (rx, child) = sidecar_cmd
             .spawn()
@@ -521,7 +575,7 @@ pub fn start_and_connect(app: &AppHandle) -> Result<(), String> {
             config_path,
             stop_flag,
         );
-        Ok(())
+        return Ok(());
     }
 }
 
@@ -541,7 +595,8 @@ pub fn restart(app: &AppHandle) -> Result<(), String> {
 
     std::thread::sleep(Duration::from_secs(1));
 
-    if !cfg!(debug_assertions) {
+    #[cfg(not(debug_assertions))]
+    {
         let sidecar_cmd = build_sidecar_command(app, &config_path)?;
         let (rx, child) = sidecar_cmd
             .spawn()
@@ -556,20 +611,24 @@ pub fn restart(app: &AppHandle) -> Result<(), String> {
         drop(state);
 
         spawn_monitor(app.clone(), rx, port, config_path, stop_flag);
-    } else {
-        let app_handle = app.clone();
-        std::thread::spawn(move || {
-            if wait_for_health(port, 30) {
-                if let Err(e) = navigate_to_viewer(&app_handle, port) {
-                    eprintln!("luwak: failed to navigate after restart: {}", e);
-                }
-            } else {
-                show_error(
-                    &app_handle,
-                    "The proxy did not become healthy after restart.",
-                );
-            }
-        });
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let dev_cmd = build_dev_command(app, &config_path);
+        let (rx, child) = dev_cmd
+            .spawn()
+            .map_err(|e| format!("Failed to spawn dev proxy: {}", e))?;
+
+        let stop_flag = Arc::new(AtomicBool::new(false));
+
+        let state_guard = app.state::<Mutex<SidecarState>>();
+        let mut state = state_guard.lock().map_err(|e| e.to_string())?;
+        state.child = Some(child);
+        state.monitor_stop = Some(stop_flag.clone());
+        drop(state);
+
+        spawn_monitor(app.clone(), rx, port, config_path, stop_flag);
     }
 
     Ok(())

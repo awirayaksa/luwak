@@ -5,6 +5,7 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, TrayIconBuilder, TrayIconEvent};
 use tauri::{App, AppHandle, Manager};
 use tauri_plugin_autostart::ManagerExt;
+use tauri_plugin_dialog::DialogExt;
 
 use crate::sidecar;
 
@@ -165,6 +166,13 @@ pub fn create(app: &App) -> Result<(), Box<dyn std::error::Error>> {
         true,
         None::<&str>,
     )?;
+    let clear_captures = MenuItem::with_id(
+        app,
+        "clear_captures",
+        "Clear Captures",
+        true,
+        None::<&str>,
+    )?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Luwak", true, None::<&str>)?;
 
@@ -180,6 +188,7 @@ pub fn create(app: &App) -> Result<(), Box<dyn std::error::Error>> {
             &open_data,
             &install_ca,
             &view_logs,
+            &clear_captures,
             &sep2,
             &quit,
         ],
@@ -243,6 +252,26 @@ pub fn create(app: &App) -> Result<(), Box<dyn std::error::Error>> {
                         let dir = log_path.parent().unwrap_or(std::path::Path::new("."));
                         open_in_file_manager(dir);
                     }
+                }
+                "clear_captures" => {
+                    let app_handle = app.clone();
+                    app.dialog()
+                        .message("Delete all captured proxy traffic? This cannot be undone.")
+                        .title("Clear Captures")
+                        .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+                        .buttons(tauri_plugin_dialog::MessageDialogButtons::YesNo)
+                        .show(move |confirmed| {
+                            if confirmed {
+                                match crate::clear_captures(app_handle.clone()) {
+                                    Ok(()) => {
+                                        eprintln!("luwak: captures cleared");
+                                    }
+                                    Err(e) => {
+                                        eprintln!("luwak: failed to clear captures: {}", e);
+                                    }
+                                }
+                            }
+                        });
                 }
                 "quit" => {
                     sidecar::kill(app);
