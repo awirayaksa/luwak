@@ -147,12 +147,24 @@ for (const p of config.providers) {
 
 // --- Transparent MITM proxy (optional) ---
 if (config.transparent?.enabled) {
+  // Luwak IS the proxy — its own upstream fetches must never route through
+  // HTTPS_PROXY (which may point at luwak itself when set system-wide).
+  // The fetch calls in proxy.ts also pass proxy:"" per-call, but clearing the
+  // env vars here is belt-and-suspenders for any other code path.
+  for (const k of ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY", "all_proxy"]) {
+    if (process.env[k]) {
+      console.log(`luwak: clearing ${k} from sidecar env to prevent proxy self-loop`);
+      delete process.env[k];
+    }
+  }
   try {
     const { hostname: thost, port: tport } = parseListen(config.transparent.listen);
     const ca = new CertificateAuthority(config.transparent.ca_cert, config.transparent.ca_key);
     console.log(`  CA cert:  ${config.transparent.ca_cert}`);
     console.log(`  Install the CA cert in your system trust store, then set:`);
     console.log(`    HTTPS_PROXY=http://${thost}:${tport}`);
+    console.log(`  Node.js clients (undici EnvHttpProxyAgent): also set`);
+    console.log(`    NODE_EXTRA_CA_CERTS=${config.transparent.ca_cert}`);
     startTransparentProxy({
       hostname: thost,
       port: tport,

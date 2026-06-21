@@ -285,9 +285,22 @@ export function startTransparentProxy(opts: TransparentOpts): net.Server {
         const tlsServer = tls.createServer({
           cert: cert.cert,
           key: cert.key,
+          // Force HTTP/1.1 via ALPN so HTTP/2-capable clients (many Rust/reqwest
+          // and Node --http2 clients) don't try h2 framing, which our parser
+          // can't handle. Without this, some clients fail the handshake or send
+          // binary HTTP/2 frames that parseHttpRequest silently drops.
+          ALPNProtocols: ["http/1.1"],
+        });
+
+        // TLS handshake failures (cert rejected, version mismatch, etc.) emit
+        // tlsClientError — not "error". Without this handler they are invisible.
+        tlsServer.on("tlsClientError", (err: Error, socket: tls.TLSSocket) => {
+          console.error(`${log} [${provider.id}] TLS handshake failed for ${hostname}: ${String(err.message)}`);
+          socket.destroy();
         });
 
         tlsServer.on("secureConnection", (tlsSocket: tls.TLSSocket) => {
+          console.log(`${log} [${provider.id}] TLS handshake OK for ${hostname}`);
           handleDecrypted(
             tlsSocket, hostname, provider, opts.store, opts.tap,
             `${log} [${provider.id}]`,
@@ -305,6 +318,7 @@ export function startTransparentProxy(opts: TransparentOpts): net.Server {
           const tlsPort = tlsServer.address() as net.AddressInfo;
 
           internalConn = net.connect(tlsPort.port, "127.0.0.1", () => {
+            console.log(`${log} [${provider.id}] internal TLS connection ready for ${hostname}`);
             for (const b of relayBuf) internalConn!.write(b);
             relayBuf = [];
           });
@@ -313,11 +327,13 @@ export function startTransparentProxy(opts: TransparentOpts): net.Server {
           internalConn.on("data", (d: Buffer) => {
             if (!clientSocket.destroyed) clientSocket.write(d);
           });
-          internalConn.on("error", () => {
+          internalConn.on("error", (err: Error) => {
+            console.error(`${log} [${provider.id}] internal conn error for ${hostname}: ${String(err.message)}`);
             clientSocket.destroy();
             try { tlsServer.close(); } catch { /* */ }
           });
           internalConn.on("close", () => {
+            console.log(`${log} [${provider.id}] internal conn closed for ${hostname}`);
             clientSocket.destroy();
             try { tlsServer.close(); } catch { /* */ }
           });
@@ -336,7 +352,15 @@ export function startTransparentProxy(opts: TransparentOpts): net.Server {
       }
     });
 
-    clientSocket.on("error", () => { /* swallow */ });
+    clientSocket.on("error", (err: Error) => {
+      console.error(`${log} client socket error: ${String(err.message)}`);
+    });
+    clientSocket.on("close", () => {
+      if (internalConn && !internalConn.destroyed) {
+        console.log(`${log} client closed connection`);
+        internalConn.destroy();
+      }
+    });
   });
 
   // Critical: without an error handler, an EADDRINUSE or other listen failure

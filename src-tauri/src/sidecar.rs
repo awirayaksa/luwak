@@ -207,6 +207,22 @@ fn show_error(app: &AppHandle, msg: &str) {
     }
 }
 
+/// Proxy env vars that must NOT be inherited by the sidecar. When the
+/// transparent MITM proxy is enabled, the user sets HTTPS_PROXY to point at
+/// luwak itself. If the sidecar inherits these, Bun caches the proxy URL at
+/// startup and routes its own upstream fetches back through the transparent
+/// proxy — creating an infinite self-loop. The `proxy: ""` per-call option
+/// and `delete process.env.HTTPS_PROXY` in index.ts are insufficient because
+/// Bun captures proxy env vars at process start, not at fetch time.
+const PROXY_ENV_VARS: &[&str] = &[
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+];
+
 /// Build the sidecar command with the correct env var and working directory.
 #[allow(dead_code)]
 fn build_sidecar_command(app: &AppHandle, config_path: &PathBuf) -> Result<tauri_plugin_shell::process::Command, String> {
@@ -220,21 +236,26 @@ fn build_sidecar_command(app: &AppHandle, config_path: &PathBuf) -> Result<tauri
         .sidecar("luwak")
         .map_err(|e| format!("Failed to find sidecar binary: {}", e))?;
 
+    // Clear proxy env vars so Bun doesn't route upstream fetches through
+    // the transparent proxy (self-loop). See PROXY_ENV_VARS comment.
+    let mut cmd = cmd
+        .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string());
+    for var in PROXY_ENV_VARS {
+        cmd = cmd.env(var, "");
+    }
+
     // On Windows, GUI apps may have a truncated PATH. Merge the system PATH
     // from the registry so the sidecar can find tools like openssl.
     #[cfg(target_os = "windows")]
     {
         let system_path = get_full_windows_path();
         Ok(cmd
-            .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
             .env("PATH", system_path)
             .current_dir(&cwd))
     }
     #[cfg(not(target_os = "windows"))]
     {
-        Ok(cmd
-            .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
-            .current_dir(&cwd))
+        Ok(cmd.current_dir(&cwd))
     }
 }
 
@@ -313,11 +334,20 @@ fn get_full_windows_path() -> String {
 #[cfg(debug_assertions)]
 fn build_dev_command(app: &AppHandle, config_path: &PathBuf) -> tauri_plugin_shell::process::Command {
     let workspace = dev_workspace_root();
-    app.shell()
+    let mut cmd = app
+        .shell()
         .command("bun")
         .args(["--watch", "src/index.ts"])
         .env("LUWAK_CONFIG", config_path.to_string_lossy().to_string())
-        .current_dir(&workspace)
+        .current_dir(&workspace);
+
+    // Clear proxy env vars so Bun doesn't route upstream fetches through
+    // the transparent proxy (self-loop). See PROXY_ENV_VARS comment above.
+    for var in PROXY_ENV_VARS {
+        cmd = cmd.env(var, "");
+    }
+
+    cmd
 }
 
 /// Monitor the sidecar: capture stderr, detect crashes, check health.

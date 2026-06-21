@@ -110,4 +110,8 @@ providers:
 #      - macOS:    security add-trusted-cert -d -r trustRoot -k login.keychain luwak-ca.crt
 #      - Linux:    cp luwak-ca.crt /usr/local/share/ca-certificates/ && sudo update-ca-certificates
 #   3) Set HTTPS_PROXY=http://127.0.0.1:8081 in your client's environment
-#   4) Use your client normally — no base URL changes needed
+#   4) Node.js clients that use undici's EnvHttpProxyAgent (e.g. pi, or any
+#      app that imports the `undici` npm package) do NOT read the OS trust
+#      store. Also set:
+#      NODE_EXTRA_CA_CERTS=./luwak-ca.crt
+#   5) Use your client normally — no base URL changes needed

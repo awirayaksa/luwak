@@ -201,6 +201,10 @@ export async function handleProxy(
       // Skip cert validation only when the provider explicitly opts out, e.g.
       // a self-signed OpenAI-compatible server on the local network.
       tls: { rejectUnauthorized: provider.tls_verify !== false },
+      // Never route upstream fetches through a proxy. When the transparent MITM
+      // proxy is enabled, HTTPS_PROXY points at luwak itself — without this,
+      // fetch would loop back through the transparent proxy infinitely.
+      proxy: "",
     });
   } catch (err) {
     return new Response(`luwak: upstream fetch failed: ${String(err)}`, { status: 502 });
@@ -311,6 +315,7 @@ async function handleProxyTranslate(
       body: openaiBytes,
       redirect: "manual",
       tls: { rejectUnauthorized: provider.tls_verify !== false },
+      proxy: "",
     });
   } catch (err) {
     // Surface connection/TLS/DNS failures: these never reach store.insert, so
